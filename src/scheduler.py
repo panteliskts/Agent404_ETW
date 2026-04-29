@@ -9,6 +9,26 @@ import pulp
 from config import BatterySpec, DEFAULT_BATTERY
 
 
+def compute_low_confidence_mask(
+    q10: pd.Series,
+    q90: pd.Series,
+    battery: BatterySpec = DEFAULT_BATTERY,
+    mean_price: float | None = None,
+) -> pd.Series:
+    """
+    Returns a boolean Series where True = low-confidence → force battery idle.
+
+    Threshold = degradation_cost + (1 - sqrt(rte)) * mean_price
+    Any MTU where the forecast spread (q90 - q10) < threshold is flagged.
+    """
+    rte = battery.eta_charge * battery.eta_discharge
+    if mean_price is None:
+        mean_price = float(((q10 + q90) / 2).mean())
+    threshold = battery.degradation_eur_per_mwh + (1 - np.sqrt(rte)) * mean_price
+    spread = q90 - q10
+    return (spread < threshold).rename("low_confidence")
+
+
 @dataclass
 class Schedule:
     timestamps: pd.DatetimeIndex
@@ -38,6 +58,7 @@ def optimize(
     delta_h: float | None = None,
     soc_init: float | None = None,
     soc_final: float | None = None,
+    idle_mask: pd.Series | None = None,
     solver_msg: bool = False,
 ) -> Schedule:
     if not isinstance(prices.index, pd.DatetimeIndex):
@@ -67,11 +88,21 @@ def optimize(
 
     model += pulp.lpSum(revenue_terms) - pulp.lpSum(deg_terms)
 
+    # Build idle flag array (1 = force idle this MTU)
+    idle = np.zeros(n, dtype=int)
+    if idle_mask is not None:
+        idle_aligned = idle_mask.reindex(prices.index).fillna(False)
+        idle = idle_aligned.values.astype(int)
+
     for t in range(n):
         prev = soc0 if t == 0 else soc[t - 1]
         model += soc[t] == prev + (battery.eta_charge * ch[t] - dis[t] / battery.eta_discharge) * delta_h
         model += ch[t] <= battery.power_mw * z[t]
         model += dis[t] <= battery.power_mw * (1 - z[t])
+        # Spread-filter: force both ch and dis to 0 in low-confidence MTUs
+        if idle[t]:
+            model += ch[t] == 0
+            model += dis[t] == 0
 
     if soc_final is not None:
         model += soc[n - 1] == soc_final
