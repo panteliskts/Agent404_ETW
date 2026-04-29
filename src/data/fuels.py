@@ -14,9 +14,12 @@ def _daily(ticker: str, start: str, end: str, name: str) -> pd.Series:
     df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False)
     if df.empty:
         raise RuntimeError(f"yfinance returned empty for {ticker}")
-    s = df["Close"].copy()
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    s = close.copy()
     s.index = pd.to_datetime(s.index).tz_localize("UTC").tz_convert(GR_TIMEZONE)
-    s.name = name
+    s = s.rename(name)
     return s
 
 

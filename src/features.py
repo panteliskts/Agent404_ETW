@@ -5,8 +5,17 @@ import pandas as pd
 
 from config import GR_TIMEZONE, MTU_SWITCH_DATE, PROCESSED_DIR, RAW_DIR
 
+TRAIN_START = "2024-01-01"
+
 LAG_PERIODS_15M = [1, 4, 8, 24, 48, 96, 96 * 7]
 ROLL_WINDOWS_15M = [4, 16, 96]
+
+PRICE_COL = "dam_price_eur_mwh"
+
+HENEX_FFILL_COLS = (
+    PRICE_COL,
+    "dam_price_60min_idx_eur_mwh",
+)
 
 
 def _load_parquet(name_glob: str) -> pd.DataFrame:
@@ -19,7 +28,7 @@ def _load_parquet(name_glob: str) -> pd.DataFrame:
     return df
 
 
-def _to_15min(df: pd.DataFrame, how: str = "ffill") -> pd.DataFrame:
+def _ensure_athens(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
     df = df.sort_index()
@@ -27,8 +36,26 @@ def _to_15min(df: pd.DataFrame, how: str = "ffill") -> pd.DataFrame:
         df.index = df.index.tz_localize(GR_TIMEZONE)
     else:
         df.index = df.index.tz_convert(GR_TIMEZONE)
-    out = df.resample("15min").interpolate(method="time") if how == "interp" else df.resample("15min").ffill()
-    return out
+    return df
+
+
+def _resample_to_15min(df: pd.DataFrame, ffill_cols: tuple[str, ...] = ()) -> pd.DataFrame:
+    """Resample mixed-resolution frame to a clean 15-min grid.
+
+    Uses ffill for stepwise quantities (prices that hold across an hour) and
+    time-interpolation for smooth quantities (load, generation, weather).
+    """
+    if df.empty:
+        return df
+    df = _ensure_athens(df)
+    grid = df.resample("15min").asfreq()
+    out_cols = {}
+    for c in df.columns:
+        if c in ffill_cols:
+            out_cols[c] = df[c].reindex(grid.index, method="ffill")
+        else:
+            out_cols[c] = df[c].reindex(grid.index).interpolate(method="time", limit=4)
+    return pd.DataFrame(out_cols, index=grid.index)
 
 
 def _calendar_features(idx: pd.DatetimeIndex) -> pd.DataFrame:
@@ -59,52 +86,74 @@ def _add_rolls(df: pd.DataFrame, col: str, windows: list[int]) -> pd.DataFrame:
     return df
 
 
-def build_dataset() -> pd.DataFrame:
-    dam = _load_parquet("entsoe_dam_*.parquet")
-    if dam.empty:
-        raise RuntimeError("No DAM price files found in data/raw — run scripts/01_fetch_data.py first")
-    dam = _to_15min(dam, how="ffill")
-    dam.columns = ["dam_price_eur_mwh"]
+def _load_henex() -> pd.DataFrame:
+    files = sorted(RAW_DIR.glob("henex_results*.parquet"))
+    if not files:
+        return pd.DataFrame()
+    df = pd.concat([pd.read_parquet(f) for f in files]).sort_index()
+    df = df[~df.index.duplicated(keep="last")]
+    return df
 
-    load_fc = _load_parquet("entsoe_load_forecast_*.parquet")
-    if not load_fc.empty:
-        load_fc = _to_15min(load_fc, how="interp")
 
-    rens = _load_parquet("entsoe_wind_solar_forecast_*.parquet")
-    if not rens.empty:
-        rens = _to_15min(rens, how="interp")
+def build_dataset(start: str = TRAIN_START) -> pd.DataFrame:
+    print("[features] loading HEnEx ...")
+    henex = _load_henex()
+    if henex.empty:
+        raise RuntimeError("No HEnEx data — run scripts/01_fetch_data.py with --source henex first")
+
+    henex = _ensure_athens(henex)
+    henex = henex.loc[henex.index >= pd.Timestamp(start, tz=GR_TIMEZONE)]
+    print(f"  henex rows={len(henex)} range={henex.index.min()} -> {henex.index.max()}")
+
+    henex_15m = _resample_to_15min(henex, ffill_cols=HENEX_FFILL_COLS)
 
     weather = _load_parquet("weather_*.parquet")
     if not weather.empty:
-        weather = _to_15min(weather, how="interp")
+        weather = _resample_to_15min(weather)
+        print(f"  weather cols={len(weather.columns)}")
 
     fuels = _load_parquet("fuels_*.parquet")
     if not fuels.empty:
-        fuels = _to_15min(fuels, how="ffill")
+        fuels = _resample_to_15min(fuels, ffill_cols=tuple(fuels.columns))
+        print(f"  fuels cols={len(fuels.columns)}")
 
-    df = dam.copy()
-    for piece in (load_fc, rens, weather, fuels):
+    entsoe_load = _load_parquet("entsoe_load_forecast_*.parquet")
+    entsoe_rens = _load_parquet("entsoe_wind_solar_forecast_*.parquet")
+    if not entsoe_load.empty:
+        entsoe_load = _resample_to_15min(entsoe_load)
+    if not entsoe_rens.empty:
+        entsoe_rens = _resample_to_15min(entsoe_rens)
+
+    df = henex_15m.copy()
+    for piece in (weather, fuels, entsoe_load, entsoe_rens):
         if not piece.empty:
             df = df.join(piece, how="left")
 
     df = df.join(_calendar_features(df.index))
 
-    df = _add_lags(df, "dam_price_eur_mwh", LAG_PERIODS_15M)
-    df = _add_rolls(df, "dam_price_eur_mwh", ROLL_WINDOWS_15M)
-
-    if "load_forecast_mw" in df.columns:
-        wind_cols = [c for c in df.columns if c.startswith("forecast_") and "wind" in c]
-        solar_cols = [c for c in df.columns if c.startswith("forecast_") and "solar" in c]
-        df["res_total_forecast_mw"] = df[wind_cols + solar_cols].sum(axis=1)
-        df["residual_load_mw"] = df["load_forecast_mw"] - df["res_total_forecast_mw"]
+    if {"load_hv_mw", "load_mv_mw", "load_lv_mw"}.issubset(df.columns):
+        df["load_total_mw"] = df[["load_hv_mw", "load_mv_mw", "load_lv_mw"]].sum(axis=1, min_count=1)
+    if {"gen_renewables_mw", "production_total_mw"}.issubset(df.columns):
+        df["res_share"] = df["gen_renewables_mw"] / df["production_total_mw"].replace(0, np.nan)
+    if {"production_total_mw", "demand_total_mw"}.issubset(df.columns):
+        df["net_export_mw"] = df["production_total_mw"] - df["demand_total_mw"]
 
     if {"ttf_eur_mwh", "eua_eur_t"}.issubset(df.columns):
-        # CCGT short-run marginal cost proxy: heat-rate ~2.0, emission factor ~0.37 t/MWh thermal -> ~0.18 t/MWh elec.
         df["ccgt_srmc_eur_mwh"] = df["ttf_eur_mwh"] * 2.0 + df["eua_eur_t"] * 0.37
+
+    df = _add_lags(df, PRICE_COL, LAG_PERIODS_15M)
+    df = _add_rolls(df, PRICE_COL, ROLL_WINDOWS_15M)
 
     df["mtu_15m_active"] = (df.index >= pd.Timestamp(MTU_SWITCH_DATE, tz=GR_TIMEZONE)).astype(int)
 
-    df = df.dropna(subset=["dam_price_eur_mwh"])
+    df = df.dropna(subset=[PRICE_COL])
+
+    nan_ratio = df.isna().mean()
+    drop_cols = nan_ratio[nan_ratio > 0.70].index.tolist()
+    if drop_cols:
+        print(f"  dropping {len(drop_cols)} cols with >70% NaN: {drop_cols}")
+        df = df.drop(columns=drop_cols)
+
     return df
 
 

@@ -10,3 +10,5 @@ lightgbm>=4.3
 matplotlib>=3.8
 pyarrow>=15.0
 tqdm>=4.66
+openpyxl>=3.1
+beautifulsoup4>=4.12
