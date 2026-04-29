@@ -1,8 +1,25 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  async rewrites() {
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return [];
+    }
+
+    const apiBase = process.env.INTERNAL_API_URL ?? "http://127.0.0.1:8000";
+    return [
+      { source: "/auth/:path*", destination: `${apiBase}/auth/:path*` },
+      { source: "/status", destination: `${apiBase}/status` },
+      { source: "/forecast", destination: `${apiBase}/forecast` },
+      { source: "/optimize", destination: `${apiBase}/optimize` },
+      { source: "/data-feeds", destination: `${apiBase}/data-feeds` },
+      { source: "/feature-importance", destination: `${apiBase}/feature-importance` },
+      { source: "/api-keys/:path*", destination: `${apiBase}/api-keys/:path*` },
+      { source: "/audit", destination: `${apiBase}/audit` }
+    ];
+  },
   async headers() {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
     const connectSrc = ["'self'", apiBase, "http://localhost:8000", "http://127.0.0.1:8000"];
     const scriptSrc = ["'self'", "'unsafe-inline'"];
 

@@ -80,7 +80,7 @@ def provision(username: str) -> str:
     return secret
 
 
-def get_provisioning_uri(username: str, issuer: str = "BESS Optimizer") -> str | None:
+def get_provisioning_uri(username: str, issuer: str = "LogicVolt") -> str | None:
     with _lock:
         row = _get_conn().execute(
             "SELECT totp_secret FROM mfa_secrets WHERE username=?", (username,)
@@ -90,7 +90,7 @@ def get_provisioning_uri(username: str, issuer: str = "BESS Optimizer") -> str |
     return pyotp.TOTP(row[0]).provisioning_uri(name=username, issuer_name=issuer)
 
 
-def get_qr_svg(username: str, issuer: str = "BESS Optimizer") -> str | None:
+def get_qr_svg(username: str, issuer: str = "LogicVolt") -> str | None:
     """Return an inline SVG QR-code for the authenticator app setup screen."""
     uri = get_provisioning_uri(username, issuer)
     if not uri:

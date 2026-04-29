@@ -61,6 +61,8 @@ def rolling_backtest(
         day_fcst = forecast.loc[forecast.index.normalize() == d]
         if day_real.empty or day_fcst.empty:
             continue
+        if len(day_real) < 2 or len(day_fcst) < 2:
+            continue
         try:
             r = evaluate_day(day_real, day_fcst, battery=battery)
             rows.append(r.__dict__)

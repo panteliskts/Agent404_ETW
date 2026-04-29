@@ -1,8 +1,8 @@
-# BESS Optimizer Onboarding Guide
+# LogicVolt Onboarding Guide
 
 ## Purpose
 
-The BESS Optimizer is a secure decision-support workspace for reviewing battery energy storage dispatch scenarios. It combines market price forecasting, degradation-aware optimization, state-of-charge guardrails, and operational KPIs in one dashboard.
+LogicVolt is a secure decision-support workspace for reviewing battery energy storage dispatch scenarios. It combines market price forecasting, degradation-aware optimization, state-of-charge guardrails, and operational KPIs in one dashboard.
 
 Use it to answer:
 

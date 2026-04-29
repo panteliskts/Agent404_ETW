@@ -1,0 +1,34 @@
+{
+  "test_window_start": "2026-04-23 23:45:00+03:00",
+  "test_window_end": "2026-04-30 23:45:00+03:00",
+  "point_accuracy": {
+    "MAE_eur_mwh": 22.15,
+    "RMSE_eur_mwh": 28.28,
+    "MAPE_pct": 374.08,
+    "sMAPE_pct": 78.74,
+    "R2": 0.827,
+    "direction_acc_pct": 61.2,
+    "mean_realized_price_eur_mwh": 74.39,
+    "n": 673
+  },
+  "quantile_calibration": {
+    "pinball_q10": 5.74,
+    "pinball_q50": 11.08,
+    "pinball_q90": 3.87,
+    "coverage_below_q10_pct": 22.7,
+    "coverage_inside_q10_q90_pct": 67.8,
+    "coverage_above_q90_pct": 9.5,
+    "mean_spread_eur_mwh": 49.53
+  },
+  "economic_value": {
+    "days_tested": 7,
+    "mean_capture_ratio": 0.833,
+    "median_capture_ratio": 0.856,
+    "min_capture_ratio": 0.646,
+    "total_perfect_eur": 116091.02,
+    "total_realized_eur": 97250.64,
+    "overall_capture_ratio": 0.838,
+    "mean_eur_per_day": 13892.95,
+    "mean_idle_mtus_per_day": 2.1
+  }
+}

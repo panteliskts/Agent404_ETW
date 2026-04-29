@@ -45,6 +45,7 @@ combined_statistics.json
 **/node_modules/
 **/dist/
 **/.next/
+**/.vercel/
 **/.cache/
 **/out/
 *.tsbuildinfo

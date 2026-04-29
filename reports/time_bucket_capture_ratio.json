@@ -1,0 +1,8 @@
+{
+  "days": 30,
+  "total_perfect_eur": 451614.95362692786,
+  "total_realized_eur": 360252.7860567405,
+  "mean_capture_ratio": 0.7936815940651721,
+  "mean_cycles_per_day": 1.3627308919999999,
+  "eur_per_mwh_capacity_per_day": 120.0842620189135
+}

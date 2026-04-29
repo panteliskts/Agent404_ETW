@@ -1,5 +1,5 @@
 """
-BESS Optimizer — Streamlit Dashboard
+LogicVolt — Streamlit Dashboard
 Pitch flow: load data → quantile forecast → LP dispatch → KPIs + 4 plots
 Works fully offline using synthetic demo data.
 """
@@ -26,7 +26,7 @@ from src import forecaster, scheduler
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="BESS Optimizer",
+    page_title="LogicVolt",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -86,7 +86,7 @@ def _apply_derating(base: BatterySpec, scenario: str) -> BatterySpec:
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("⚡ BESS Optimizer")
+    st.title("⚡ LogicVolt")
     st.markdown("---")
 
     st.subheader("Battery Parameters")

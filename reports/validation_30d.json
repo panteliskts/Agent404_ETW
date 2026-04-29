@@ -1,0 +1,40 @@
+{
+  "test_window_start": "2026-03-31 23:45:00+03:00",
+  "test_window_end": "2026-04-30 23:45:00+03:00",
+  "test_days": 30,
+  "n_train_rows": 78807,
+  "point_accuracy": {
+    "MAE_eur_mwh": 24.86,
+    "RMSE_eur_mwh": 31.03,
+    "R2": 0.77,
+    "direction_acc_pct": 62.5,
+    "mean_realized_price_eur_mwh": 88.74,
+    "n": 2881
+  },
+  "quantile_calibration": {
+    "pinball_q10": 6.8,
+    "pinball_q50": 12.43,
+    "pinball_q90": 4.68,
+    "coverage_below_q10_pct": 27.3,
+    "coverage_inside_pct": 55.8,
+    "coverage_above_q90_pct": 16.9,
+    "mean_spread_eur_mwh": 51.71
+  },
+  "economic_value": {
+    "days_tested": 30,
+    "mean_capture_ratio": 0.828,
+    "median_capture_ratio": 0.876,
+    "min_capture_ratio": 0.388,
+    "max_capture_ratio": 0.97,
+    "std_capture_ratio": 0.148,
+    "p10_capture_ratio": 0.612,
+    "p90_capture_ratio": 0.939,
+    "total_perfect_eur": 451614.93,
+    "total_realized_eur": 374699.87,
+    "overall_capture_ratio": 0.83,
+    "mean_eur_per_day": 12490.0,
+    "total_buy_mwh": 4559.1,
+    "total_sell_mwh": 4114.0,
+    "mean_idle_mtus_per_day": 0.9
+  }
+}
