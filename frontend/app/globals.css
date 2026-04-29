@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  background: #f9fafb;
+  color: #111827;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: #f9fafb;
+  color: #111827;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.range-input {
+  accent-color: #3b82f6;
+}
+
+.chart-tooltip {
+  border: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 30px rgba(17, 24, 39, 0.12);
+}

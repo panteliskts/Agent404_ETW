@@ -157,6 +157,44 @@ def build_dataset(start: str = TRAIN_START) -> pd.DataFrame:
     return df
 
 
+def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Adds all derived features to a pre-loaded, merged DataFrame.
+    df must have dam_price_eur_mwh on a tz-aware DatetimeIndex.
+    Lags require at least 7 days of history; rows with NaN lags are kept
+    so callers can decide how to handle them.
+    """
+    df = df.copy()
+    if df.index.tz is None:
+        df.index = df.index.tz_localize(GR_TIMEZONE)
+
+    df = df.join(_calendar_features(df.index), how="left")
+    df = _add_lags(df, "dam_price_eur_mwh", LAG_PERIODS_15M)
+    df = _add_rolls(df, "dam_price_eur_mwh", ROLL_WINDOWS_15M)
+
+    # Residual load (if load + RES columns present)
+    if "load_forecast_mw" in df.columns and "res_total_forecast_mw" in df.columns:
+        df["residual_load_mw"] = df["load_forecast_mw"] - df["res_total_forecast_mw"]
+        # Greek-specific: midday (11-15) and evening (18-22) rolling means
+        df["midday_res_load"] = (
+            df["residual_load_mw"].where((df["hour"] >= 11) & (df["hour"] <= 15))
+            .rolling(96, min_periods=1).mean()
+        )
+        df["evening_res_load"] = (
+            df["residual_load_mw"].where((df["hour"] >= 18) & (df["hour"] <= 22))
+            .rolling(96, min_periods=1).mean()
+        )
+        df["evening_ramp"] = df["evening_res_load"] - df["midday_res_load"]
+
+    # CCGT short-run marginal cost proxy
+    if {"ttf_eur_mwh", "eua_eur_t"}.issubset(df.columns):
+        df["ccgt_srmc_eur_mwh"] = df["ttf_eur_mwh"] * 2.0 + df["eua_eur_t"] * 0.37
+
+    df["mtu_15m_active"] = (df.index >= pd.Timestamp(MTU_SWITCH_DATE, tz=GR_TIMEZONE)).astype(int)
+
+    return df.dropna(subset=["dam_price_eur_mwh"])
+
+
 def save() -> str:
     df = build_dataset()
     path = PROCESSED_DIR / "features.parquet"

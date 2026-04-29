@@ -13,6 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from config import MODELS_DIR
 
 TARGET = "dam_price_eur_mwh"
+QUANTILE_ALPHAS = [0.10, 0.50, 0.90]
 
 
 def _drop_target_leakage(features: pd.DataFrame) -> list[str]:
@@ -80,6 +81,99 @@ def train(df: pd.DataFrame, valid_days: int = 30, test_days: int = 30) -> TrainR
     }
     print(f"  test MAE = {metrics['test_mae']:.2f} EUR/MWh   RMSE = {metrics['test_rmse']:.2f}")
     return TrainResult(model=booster, feature_cols=feat_cols, metrics=metrics)
+
+
+def train_quantile(
+    df: pd.DataFrame,
+    alpha: float,
+    valid_days: int = 30,
+    test_days: int = 7,
+) -> TrainResult:
+    """Train a single quantile-regression LightGBM model."""
+    df = df.dropna(subset=[TARGET]).copy()
+    feat_cols = _drop_target_leakage(df)
+
+    train_df, valid_df, test_df = time_split(df, valid_days, test_days)
+
+    dtrain = lgb.Dataset(train_df[feat_cols], train_df[TARGET])
+    dvalid = lgb.Dataset(valid_df[feat_cols], valid_df[TARGET], reference=dtrain)
+
+    params = {
+        "objective": "quantile",
+        "alpha": alpha,
+        "metric": "quantile",
+        "learning_rate": 0.05,
+        "num_leaves": 63,
+        "min_data_in_leaf": 50,
+        "feature_fraction": 0.85,
+        "bagging_fraction": 0.85,
+        "bagging_freq": 5,
+        "verbose": -1,
+    }
+    booster = lgb.train(
+        params,
+        dtrain,
+        num_boost_round=2000,
+        valid_sets=[dvalid],
+        callbacks=[lgb.early_stopping(80), lgb.log_evaluation(period=500)],
+    )
+
+    preds = booster.predict(test_df[feat_cols], num_iteration=booster.best_iteration)
+    metrics = {
+        "alpha": alpha,
+        "test_n": int(len(test_df)),
+        "best_iter": int(booster.best_iteration),
+    }
+    return TrainResult(model=booster, feature_cols=feat_cols, metrics=metrics)
+
+
+def train_all_quantiles(
+    df: pd.DataFrame,
+    valid_days: int = 30,
+    test_days: int = 7,
+) -> dict[str, TrainResult]:
+    """Train q10, q50, q90 quantile models. Returns dict keyed by 'q10'/'q50'/'q90'."""
+    results: dict[str, TrainResult] = {}
+    for alpha in QUANTILE_ALPHAS:
+        key = f"q{int(alpha * 100):02d}"
+        print(f"  training {key} (alpha={alpha}) …")
+        results[key] = train_quantile(df, alpha, valid_days, test_days)
+        results[key].save(f"lgbm_{key}")
+    return results
+
+
+def predict_interval(
+    models: dict[str, TrainResult],
+    features: pd.DataFrame,
+) -> pd.DataFrame:
+    """Return DataFrame with q10, q50, q90 forecast columns."""
+    out = {}
+    for key, result in models.items():
+        raw = result.model.predict(
+            features[result.feature_cols],
+            num_iteration=result.model.best_iteration,
+        )
+        out[key] = pd.Series(raw, index=features.index)
+    return pd.DataFrame(out)
+
+
+def load_quantile_models() -> dict[str, TrainResult] | None:
+    """Load pre-trained quantile models from disk. Returns None if any are missing."""
+    results: dict[str, TrainResult] = {}
+    for alpha in QUANTILE_ALPHAS:
+        key = f"q{int(alpha * 100):02d}"
+        model_path = MODELS_DIR / f"lgbm_{key}.txt"
+        meta_path  = MODELS_DIR / f"lgbm_{key}.json"
+        if not model_path.exists() or not meta_path.exists():
+            return None
+        booster = lgb.Booster(model_file=str(model_path))
+        meta    = json.loads(meta_path.read_text())
+        results[key] = TrainResult(
+            model=booster,
+            feature_cols=meta["feature_cols"],
+            metrics=meta.get("metrics", {}),
+        )
+    return results
 
 
 def predict(model: lgb.Booster, features: pd.DataFrame, feature_cols: list[str]) -> pd.Series:
