@@ -1,6 +1,7 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Area,
@@ -65,25 +66,6 @@ const COLORS = {
   actual: "#52616f",
   grid: "#d8dee6"
 };
-
-const ONBOARDING_STEPS = [
-  {
-    label: "1. Confirm data",
-    detail: "Check source, model status, and row count before using dispatch outputs in an operating discussion."
-  },
-  {
-    label: "2. Set asset limits",
-    detail: "Match capacity, power, efficiency, degradation cost, and initial SoC to the battery scenario under review."
-  },
-  {
-    label: "3. Compare scenarios",
-    detail: "Switch derating modes to evaluate base, mild, and severe degradation cases without changing the forecast window."
-  },
-  {
-    label: "4. Review dispatch",
-    detail: "Use the forecast band, low-confidence idle periods, and SoC envelope before approving an operating plan."
-  }
-];
 
 const OPERATING_NOTES = [
   "Q10/Q50/Q90 curves show price uncertainty over the active dispatch horizon.",
@@ -392,7 +374,7 @@ function LoginPage({
     <main className="flex min-h-screen items-center justify-center bg-[#f3f5f7] px-4 py-8 text-slate-950">
       <section className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl lg:grid-cols-[1.05fr_0.95fr]">
         <div className="bg-[#17202a] p-8 text-white lg:p-10">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">METLEN Energy & Metals</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">Enterprise BESS Platform</div>
           <h1 className="mt-8 max-w-md text-4xl font-semibold leading-tight">Battery dispatch intelligence for energy storage operations.</h1>
           <p className="mt-5 max-w-md text-sm leading-6 text-slate-300">
             Secure access to forecast, optimization, degradation, and operating envelope views for BESS scenario planning.
@@ -457,6 +439,7 @@ function LoginPage({
 
 export default function DashboardPage() {
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [selectedAsset, setSelectedAsset] = useState("Athens Battery 1");
   const [params, setParams] = useState<OptimizeRequest>(DEFAULT_PARAMS);
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [forecast, setForecast] = useState<ForecastResponse | null>(null);
@@ -729,6 +712,11 @@ export default function DashboardPage() {
   }, [featureImportance]);
 
   const intervalMs = dispatchData.length > 1 ? dispatchData[1].ts - dispatchData[0].ts : 60 * 60 * 1000;
+  const totalEnergyTradedMwh = dispatchData.reduce(
+    (total, point) => total + Math.abs(point.net_mw) * (intervalMs / (60 * 60 * 1000)),
+    0
+  );
+  const spreadCaptured = totalEnergyTradedMwh > 0 ? (optimization?.kpis.gross_revenue_eur ?? 0) / totalEnergyTradedMwh : 0;
   const dispatchLimit = Math.max(
     10,
     Math.ceil(Math.max(params.power_mw, ...dispatchData.map((point) => Math.abs(point.net_mw))) / 10) * 10
@@ -747,6 +735,24 @@ export default function DashboardPage() {
     }
   }
 
+  function exportSchedule() {
+    if (!dispatchData.length) {
+      return;
+    }
+
+    const header = ["time", "charge_mw", "discharge_mw", "net_mw", "soc_mwh", "is_idle"];
+    const rows = dispatchData.map((row) =>
+      [row.time, row.charge_mw, row.discharge_mw, row.net_mw, row.soc_mwh, row.is_idle].join(",")
+    );
+    const blob = new Blob([[header.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${selectedAsset.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-dispatch-schedule.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   if (!authUser) {
     return (
       <LoginPage
@@ -762,10 +768,22 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[#f3f5f7] text-[#17202a]">
       <aside className="sidebar-scroll border-b border-slate-200 bg-white px-4 py-4 shadow-sm md:fixed md:inset-y-0 md:left-0 md:z-20 md:w-[300px] md:overflow-y-auto md:border-b-0 md:border-r md:px-5">
         <div className="rounded-lg bg-[#17202a] p-5 text-white">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">METLEN</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">BESS SaaS</div>
           <h1 className="mt-3 text-xl font-semibold leading-tight">Energy Storage Optimizer</h1>
           <p className="mt-3 text-xs leading-5 text-slate-300">Dispatch planning workspace for BESS forecast, risk, and revenue review.</p>
         </div>
+
+        <nav className="mt-4 grid gap-2 text-sm font-semibold">
+          <Link className="rounded-lg bg-slate-100 px-3 py-2 text-slate-950" href="/">
+            Optimization Dashboard
+          </Link>
+          <Link className="rounded-lg px-3 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950" href="/onboarding">
+            Onboarding
+          </Link>
+          <Link className="rounded-lg px-3 py-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950" href="/account">
+            Account & API
+          </Link>
+        </nav>
 
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -795,6 +813,20 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-6 space-y-6">
+          <section>
+            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Portfolio asset</h2>
+            <select
+              className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+              value={selectedAsset}
+              onChange={(event) => setSelectedAsset(event.target.value)}
+            >
+              <option>Athens Battery 1</option>
+              <option>Thessaloniki Battery 2</option>
+              <option>Patras Battery 3</option>
+              <option>Fleet Aggregate</option>
+            </select>
+          </section>
+
           <section>
             <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Asset assumptions</h2>
             <div className="mt-4 space-y-4">
@@ -884,7 +916,7 @@ export default function DashboardPage() {
           <section className="enterprise-panel rounded-lg p-5 md:p-6">
             <div className="grid gap-5 lg:grid-cols-[1fr_360px] lg:items-start">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">Metlen BESS Dispatch Workspace</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">BESS Dispatch Workspace</div>
                 <h2 className="mt-2 text-3xl font-semibold leading-tight text-slate-950">Enterprise battery optimization and market-risk view</h2>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
                   Review forecast uncertainty, degradation-aware dispatch, state-of-charge compliance, and operational KPIs from one controlled workspace.
@@ -900,6 +932,10 @@ export default function DashboardPage() {
                   <div className="mt-1 font-semibold text-slate-950">{sourceLabel(source)}</div>
                 </div>
                 <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Asset</div>
+                  <div className="mt-1 font-semibold text-slate-950">{selectedAsset}</div>
+                </div>
+                <div>
                   <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Scenario</div>
                   <div className="mt-1 font-semibold text-slate-950">{params.scenario}</div>
                 </div>
@@ -911,28 +947,14 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <section className="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
-            <div className="enterprise-panel rounded-lg p-5">
-              <SectionHeader title="Operator Onboarding" eyebrow="How to use this workspace" />
-              <div className="grid gap-3 md:grid-cols-2">
-                {ONBOARDING_STEPS.map((step) => (
-                  <div key={step.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-semibold text-slate-950">{step.label}</div>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">{step.detail}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="enterprise-panel rounded-lg p-5">
-              <SectionHeader title="Decision Checks" eyebrow="Before sharing output" />
-              <div className="space-y-3">
-                {OPERATING_NOTES.map((note) => (
-                  <div key={note} className="flex gap-3 text-sm leading-6 text-slate-600">
-                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-600" />
-                    <span>{note}</span>
-                  </div>
-                ))}
-              </div>
+          <section className="enterprise-panel rounded-lg p-5">
+            <SectionHeader title="Decision Checks" eyebrow="Before approving output" />
+            <div className="grid gap-3 lg:grid-cols-3">
+              {OPERATING_NOTES.map((note) => (
+                <div key={note} className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                  {note}
+                </div>
+              ))}
             </div>
           </section>
 
@@ -948,19 +970,19 @@ export default function DashboardPage() {
             <>
               <section className="grid gap-4 lg:grid-cols-4">
                 <MetricCard
-                  label="Net Profit"
+                  label="Estimated Daily Profit"
                   value={formatEuro(optimization?.kpis.net_profit_eur)}
                   helper="Forecast-driven objective"
                   tone="primary"
                 />
-                <MetricCard label="Gross Revenue" value={formatEuro(optimization?.kpis.gross_revenue_eur)} helper="Market spread capture" />
+                <MetricCard label="Total Energy Traded" value={`${formatNumber(totalEnergyTradedMwh, 1)} MWh`} helper="Absolute scheduled throughput" />
                 <MetricCard
-                  label="Degradation"
-                  value={formatEuro(optimization?.kpis.degradation_eur)}
-                  helper="Throughput cost estimate"
+                  label="Spread Captured"
+                  value={`${formatNumber(spreadCaptured, 1)} €/MWh`}
+                  helper="Gross revenue per traded MWh"
                   tone="warning"
                 />
-                <MetricCard label="Cycles Used" value={formatNumber(optimization?.kpis.cycles_used, 2)} helper="Equivalent full cycles" />
+                <MetricCard label="Cycles Used" value={formatNumber(optimization?.kpis.cycles_used, 2)} helper={`${selectedAsset} scenario`} />
               </section>
 
               <section className="rounded-lg border border-teal-100 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-950">
@@ -1041,7 +1063,18 @@ export default function DashboardPage() {
                 <SectionHeader
                   title="Dispatch Schedule"
                   eyebrow="Charge / discharge plan"
-                  action={<span className="text-xs font-semibold text-slate-500">Grey bands = low-confidence idle</span>}
+                  action={
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-xs font-semibold text-slate-500">Grey bands = low-confidence idle</span>
+                      <button
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-teal-500 hover:text-teal-700"
+                        type="button"
+                        onClick={exportSchedule}
+                      >
+                        Export CSV
+                      </button>
+                    </div>
+                  }
                 />
                 <div className="h-[330px]">
                   <ResponsiveContainer width="100%" height="100%">

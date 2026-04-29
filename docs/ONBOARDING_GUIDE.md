@@ -1,8 +1,8 @@
-# METLEN BESS Optimizer Onboarding Guide
+# BESS Optimizer Onboarding Guide
 
 ## Purpose
 
-The METLEN BESS Optimizer is a secure decision-support workspace for reviewing battery energy storage dispatch scenarios. It combines market price forecasting, degradation-aware optimization, state-of-charge guardrails, and operational KPIs in one dashboard.
+The BESS Optimizer is a secure decision-support workspace for reviewing battery energy storage dispatch scenarios. It combines market price forecasting, degradation-aware optimization, state-of-charge guardrails, and operational KPIs in one dashboard.
 
 Use it to answer:
 
@@ -26,6 +26,12 @@ Open:
 ```text
 http://127.0.0.1:3000
 ```
+
+Main pages:
+
+- `/` for the optimization dashboard
+- `/onboarding` for asset setup, data feeds, scenario sandbox, and portfolio workflow
+- `/account` for API keys, audit logs, export controls, and session details
 
 Default local credentials:
 
@@ -70,9 +76,9 @@ APP_SECRET_KEY=use-a-long-random-secret
 
    The top KPI row summarizes:
 
-   - Net Profit
-   - Gross Revenue
-   - Degradation Cost
+   - Estimated Daily Profit
+   - Total Energy Traded
+   - Spread Captured
    - Cycles Used
 
 6. Review forecast uncertainty.
@@ -91,15 +97,37 @@ APP_SECRET_KEY=use-a-long-random-secret
 
    Open `Feature Importance` to see which model features most influenced the Q50 forecast.
 
+## Plug-And-Play Platform Modules
+
+### Asset Digital Twin Wizard
+
+The `/onboarding` page presents the asset definition workflow expected in a SaaS product: energy capacity, power rating, round-trip efficiency, SoC limits, cycle life, degradation cost, and initial SoC.
+
+### Data Integration Hub
+
+The onboarding page shows the external data feed layer for HEnEx, IPTO, Open-Meteo, and TTF/EEX context. In a production deployment, these cards should be wired to live feed health checks.
+
+### Scenario Sandbox
+
+The scenario sandbox communicates how users can test assumptions such as solar curtailment, evening scarcity, or high degradation costs before approving a schedule.
+
+### API-First Account Controls
+
+The `/account` page frames API keys, audit logs, schedule exports, and future SCADA/control handoff. This supports the enterprise narrative that the platform is not only a dashboard; it is an integration layer.
+
 ## How To Interpret The Dashboard
 
-### Net Profit
+### Estimated Daily Profit
 
 Estimated dispatch value after degradation cost. This is the primary objective value for the active forecast horizon.
 
-### Gross Revenue
+### Total Energy Traded
 
-Market spread capture before degradation cost.
+Total scheduled energy movement during the active horizon.
+
+### Spread Captured
+
+Gross revenue divided by traded energy, expressed as €/MWh.
 
 ### Degradation
 

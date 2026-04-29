@@ -3,8 +3,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BESS Optimizer",
-  description: "Battery Energy Storage System optimizer dashboard"
+  title: "Enterprise BESS Optimizer",
+  description: "Plug-and-play battery energy storage optimization platform"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
