@@ -230,7 +230,7 @@ def feature_importance_table(booster: lgb.Booster, feature_cols: list[str]) -> p
     return out.sort_values("gain", ascending=False).reset_index(drop=True)
 
 
-def _train_lgbm_quick(train_df, valid_df, feat_cols, num_boost_round=2000):
+def _train_lgbm_quick(train_df, valid_df, feat_cols, num_boost_round=2000, params_override: dict | None = None):
     dtrain = lgb.Dataset(train_df[feat_cols], train_df[TARGET])
     dvalid = lgb.Dataset(valid_df[feat_cols], valid_df[TARGET], reference=dtrain)
     params = {
@@ -244,6 +244,8 @@ def _train_lgbm_quick(train_df, valid_df, feat_cols, num_boost_round=2000):
         "bagging_freq": 5,
         "verbose": -1,
     }
+    if params_override:
+        params.update(params_override)
     return lgb.train(
         params, dtrain, num_boost_round=num_boost_round,
         valid_sets=[dvalid],
@@ -259,6 +261,7 @@ def rolling_origin_cv(
     feature_cols: list[str] | None = None,
     model: str = "lgbm",
     alpha: float = 1.0,
+    lgbm_params: dict | None = None,
 ) -> pd.DataFrame:
     """Disjoint test windows of `test_days` each, anchored at the end and walking back."""
     df = df.dropna(subset=[TARGET]).sort_index().copy()
@@ -276,7 +279,7 @@ def rolling_origin_cv(
         if len(train_df) < 1000 or len(test_df) < 50 or len(valid_df) < 50:
             continue
         if model == "lgbm":
-            booster = _train_lgbm_quick(train_df, valid_df, feat_cols)
+            booster = _train_lgbm_quick(train_df, valid_df, feat_cols, params_override=lgbm_params)
             preds = booster.predict(test_df[feat_cols], num_iteration=booster.best_iteration)
         elif model == "ridge":
             pipe = Pipeline([
