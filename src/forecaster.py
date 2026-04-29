@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import joblib
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+from config import MODELS_DIR
+
+TARGET = "dam_price_eur_mwh"
+
+
+def _drop_target_leakage(features: pd.DataFrame) -> list[str]:
+    return [c for c in features.columns if c != TARGET]
+
+
+@dataclass
+class TrainResult:
+    model: lgb.Booster
+    feature_cols: list[str]
+    metrics: dict = field(default_factory=dict)
+
+    def save(self, name: str = "lgbm_dam") -> Path:
+        out = MODELS_DIR / f"{name}.txt"
+        self.model.save_model(str(out))
+        meta = {"feature_cols": self.feature_cols, "metrics": self.metrics}
+        (MODELS_DIR / f"{name}.json").write_text(json.dumps(meta, indent=2))
+        return out
+
+
+def time_split(df: pd.DataFrame, valid_days: int = 30, test_days: int = 30):
+    end = df.index.max()
+    test_start = end - pd.Timedelta(days=test_days)
+    valid_start = test_start - pd.Timedelta(days=valid_days)
+    train = df.loc[df.index < valid_start]
+    valid = df.loc[(df.index >= valid_start) & (df.index < test_start)]
+    test = df.loc[df.index >= test_start]
+    return train, valid, test
+
+
+def train(df: pd.DataFrame, valid_days: int = 30, test_days: int = 30) -> TrainResult:
+    df = df.dropna(subset=[TARGET]).copy()
+    feat_cols = _drop_target_leakage(df)
+
+    train_df, valid_df, test_df = time_split(df, valid_days, test_days)
+
+    dtrain = lgb.Dataset(train_df[feat_cols], train_df[TARGET])
+    dvalid = lgb.Dataset(valid_df[feat_cols], valid_df[TARGET], reference=dtrain)
+
+    params = {
+        "objective": "regression",
+        "metric": "mae",
+        "learning_rate": 0.05,
+        "num_leaves": 127,
+        "min_data_in_leaf": 50,
+        "feature_fraction": 0.85,
+        "bagging_fraction": 0.85,
+        "bagging_freq": 5,
+        "verbose": -1,
+    }
+    booster = lgb.train(
+        params,
+        dtrain,
+        num_boost_round=4000,
+        valid_sets=[dvalid],
+        callbacks=[lgb.early_stopping(100), lgb.log_evaluation(period=200)],
+    )
+
+    preds = booster.predict(test_df[feat_cols], num_iteration=booster.best_iteration)
+    metrics = {
+        "test_mae": float(mean_absolute_error(test_df[TARGET], preds)),
+        "test_rmse": float(np.sqrt(mean_squared_error(test_df[TARGET], preds))),
+        "test_n": int(len(test_df)),
+        "best_iter": int(booster.best_iteration),
+    }
+    print(f"  test MAE = {metrics['test_mae']:.2f} EUR/MWh   RMSE = {metrics['test_rmse']:.2f}")
+    return TrainResult(model=booster, feature_cols=feat_cols, metrics=metrics)
+
+
+def predict(model: lgb.Booster, features: pd.DataFrame, feature_cols: list[str]) -> pd.Series:
+    yhat = model.predict(features[feature_cols], num_iteration=model.best_iteration)
+    return pd.Series(yhat, index=features.index, name="dam_price_forecast_eur_mwh")
+
+
+def load(name: str = "lgbm_dam") -> tuple[lgb.Booster, list[str]]:
+    booster = lgb.Booster(model_file=str(MODELS_DIR / f"{name}.txt"))
+    meta = json.loads((MODELS_DIR / f"{name}.json").read_text())
+    return booster, meta["feature_cols"]
