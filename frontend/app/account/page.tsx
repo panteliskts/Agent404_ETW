@@ -13,6 +13,7 @@ import {
   revokeApiKey,
   startMfaSetup
 } from "@/lib/api";
+import { toUserErrorMessage } from "@/lib/errors";
 import type {
   ApiKey,
   AuditEntry,
@@ -42,10 +43,6 @@ function actionTone(action: string) {
     return "text-teal-700";
   }
   return "text-slate-700";
-}
-
-function asMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Unexpected error";
 }
 
 export default function AccountPage() {
@@ -95,7 +92,7 @@ export default function AccountPage() {
       setApiKeys(response.keys);
       setKeysError(null);
     } catch (error) {
-      setKeysError(asMessage(error));
+      setKeysError(toUserErrorMessage(error));
     } finally {
       setIsLoadingKeys(false);
     }
@@ -108,7 +105,7 @@ export default function AccountPage() {
       setAudit(response.entries);
       setAuditError(null);
     } catch (error) {
-      setAuditError(asMessage(error));
+      setAuditError(toUserErrorMessage(error));
     } finally {
       setIsLoadingAudit(false);
     }
@@ -120,7 +117,7 @@ export default function AccountPage() {
       setMfaEnabled(status.enabled);
       setMfaError(null);
     } catch (error) {
-      setMfaError(asMessage(error));
+      setMfaError(toUserErrorMessage(error));
     }
   }, []);
 
@@ -141,7 +138,7 @@ export default function AccountPage() {
       await refreshKeys();
       await refreshAudit();
     } catch (error) {
-      setKeysError(asMessage(error));
+      setKeysError(toUserErrorMessage(error));
     } finally {
       setIsCreatingKey(false);
     }
@@ -153,7 +150,7 @@ export default function AccountPage() {
       await refreshKeys();
       await refreshAudit();
     } catch (error) {
-      setKeysError(asMessage(error));
+      setKeysError(toUserErrorMessage(error));
     }
   }
 
@@ -164,7 +161,7 @@ export default function AccountPage() {
       const setup = await startMfaSetup();
       setMfaSetup(setup);
     } catch (error) {
-      setMfaError(asMessage(error));
+      setMfaError(toUserErrorMessage(error));
     } finally {
       setIsMfaWorking(false);
     }
@@ -181,7 +178,7 @@ export default function AccountPage() {
       await refreshMfa();
       await refreshAudit();
     } catch (error) {
-      setMfaError(asMessage(error));
+      setMfaError(toUserErrorMessage(error));
     } finally {
       setIsMfaWorking(false);
     }
@@ -194,7 +191,7 @@ export default function AccountPage() {
       await refreshMfa();
       await refreshAudit();
     } catch (error) {
-      setMfaError(asMessage(error));
+      setMfaError(toUserErrorMessage(error));
     } finally {
       setIsMfaWorking(false);
     }
@@ -209,7 +206,7 @@ export default function AccountPage() {
               <div className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">Account</div>
               <h1 className="mt-2 text-3xl font-semibold text-slate-950">Account, API, and compliance controls</h1>
               <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-                Manage access, integrations, audit trails, MFA, and API keys for downstream BESS dispatch consumers.
+                Manage access, integrations, audit trails, MFA, and API keys for downstream LogicVolt dispatch consumers.
               </p>
             </div>
             <nav className="flex flex-wrap gap-2 text-sm font-semibold">

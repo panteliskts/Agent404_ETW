@@ -9,6 +9,7 @@ This project includes a native Next.js chatbot widget that floats in the bottom-
 | Secure server route for Groq | `frontend/app/api/chat/route.ts` |
 | Floating React widget | `frontend/components/chat-widget.tsx` |
 | Global widget mount | `frontend/app/layout.tsx` |
+| Chatbot knowledge base | `docs/CHATBOT_KNOWLEDGE_BASE.md` |
 
 ## Dependencies
 
@@ -60,7 +61,13 @@ http://127.0.0.1:3002
 
 ## System Prompt
 
-Paste the app documentation into the `SYSTEM_PROMPT` variable in:
+The chat route builds its `SYSTEM_PROMPT` from:
+
+```text
+docs/CHATBOT_KNOWLEDGE_BASE.md
+```
+
+Edit that Markdown file when the website, API, workflows, KPIs, or troubleshooting guidance changes. The route that loads it is:
 
 ```text
 frontend/app/api/chat/route.ts

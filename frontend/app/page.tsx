@@ -27,6 +27,7 @@ import {
   postOptimize,
   verifyMfa
 } from "@/lib/api";
+import { GENERIC_ERROR_MESSAGE, toUserErrorMessage } from "@/lib/errors";
 import type {
   AuthUser,
   FeatureImportanceResponse,
@@ -118,10 +119,6 @@ type ChartTooltipProps = {
     payload?: Record<string, unknown>;
   }>;
 };
-
-function asErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Unexpected error";
-}
 
 function formatEuro(value?: number) {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -394,7 +391,7 @@ function LoginPage({
     <main className="flex min-h-screen items-center justify-center bg-[#f3f5f7] px-4 py-8 text-slate-950">
       <section className="grid w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl lg:grid-cols-[1.05fr_0.95fr]">
         <div className="bg-[#17202a] p-8 text-white lg:p-10">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">Enterprise BESS Platform</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">LogicVolt</div>
           <h1 className="mt-8 max-w-md text-4xl font-semibold leading-tight">Battery dispatch intelligence for energy storage operations.</h1>
           <p className="mt-5 max-w-md text-sm leading-6 text-slate-300">
             Secure access to forecast, optimization, degradation, and operating envelope views for BESS scenario planning.
@@ -514,6 +511,7 @@ export default function DashboardPage() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [mfaChallenge, setMfaChallenge] = useState<{ mfa_token: string } | null>(null);
   const didBootstrap = useRef(false);
   const didOptimize = useRef(false);
 
@@ -567,10 +565,15 @@ export default function DashboardPage() {
       setLoginError(null);
       try {
         const response = await loginRequest({ username, password });
+        if (response.mfa_required) {
+          setMfaChallenge({ mfa_token: response.mfa_token });
+          return;
+        }
         resetDashboard();
+        setMfaChallenge(null);
         setAuthUser(response.user);
       } catch (requestError) {
-        setLoginError(asErrorMessage(requestError));
+        setLoginError(toUserErrorMessage(requestError));
       } finally {
         setIsLoggingIn(false);
         setIsCheckingAuth(false);
@@ -578,6 +581,31 @@ export default function DashboardPage() {
     },
     [resetDashboard]
   );
+
+  const handleVerifyMfa = useCallback(
+    async (totp_code: string) => {
+      if (!mfaChallenge) return;
+      setIsLoggingIn(true);
+      setLoginError(null);
+      try {
+        const response = await verifyMfa({ mfa_token: mfaChallenge.mfa_token, totp_code });
+        resetDashboard();
+        setMfaChallenge(null);
+        setAuthUser(response.user);
+      } catch (requestError) {
+        setLoginError(toUserErrorMessage(requestError));
+      } finally {
+        setIsLoggingIn(false);
+        setIsCheckingAuth(false);
+      }
+    },
+    [mfaChallenge, resetDashboard]
+  );
+
+  const handleCancelMfa = useCallback(() => {
+    setMfaChallenge(null);
+    setLoginError(null);
+  }, []);
 
   const handleLogout = useCallback(async () => {
     setIsLoggingOut(true);
@@ -588,6 +616,7 @@ export default function DashboardPage() {
     } finally {
       resetDashboard();
       setAuthUser(null);
+      setMfaChallenge(null);
       setIsLoggingOut(false);
     }
   }, [resetDashboard]);
@@ -612,7 +641,7 @@ export default function DashboardPage() {
       if (isUnauthorizedError(requestError)) {
         handleAuthExpired();
       } else {
-        setError(asErrorMessage(requestError));
+        setError(toUserErrorMessage(requestError));
       }
     } finally {
       setIsOptimizing(false);
@@ -637,7 +666,7 @@ export default function DashboardPage() {
         setStatus(response);
         if (response.model_status === "error") {
           setIsInitialLoading(false);
-          setError(response.model_error ?? "Model startup failed");
+          setError(GENERIC_ERROR_MESSAGE);
         }
         if (response.model_ready && timer) {
           clearInterval(timer);
@@ -648,7 +677,7 @@ export default function DashboardPage() {
             handleAuthExpired();
           } else {
             setIsInitialLoading(false);
-            setError(asErrorMessage(requestError));
+            setError(toUserErrorMessage(requestError));
           }
         }
       }
@@ -696,7 +725,7 @@ export default function DashboardPage() {
           if (isUnauthorizedError(requestError)) {
             handleAuthExpired();
           } else {
-            setError(asErrorMessage(requestError));
+            setError(toUserErrorMessage(requestError));
           }
         }
       } finally {
@@ -821,7 +850,10 @@ export default function DashboardPage() {
         error={loginError}
         isCheckingAuth={isCheckingAuth}
         isSubmitting={isLoggingIn}
+        mfaChallenge={mfaChallenge}
         onLogin={handleLogin}
+        onVerifyMfa={handleVerifyMfa}
+        onCancelMfa={handleCancelMfa}
       />
     );
   }
@@ -830,7 +862,7 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-[#f3f5f7] text-[#17202a]">
       <aside className="sidebar-scroll border-b border-slate-200 bg-white px-4 py-4 shadow-sm md:fixed md:inset-y-0 md:left-0 md:z-20 md:w-[300px] md:overflow-y-auto md:border-b-0 md:border-r md:px-5">
         <div className="rounded-lg bg-[#17202a] p-5 text-white">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">BESS SaaS</div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-teal-200">LogicVolt</div>
           <h1 className="mt-3 text-xl font-semibold leading-tight">Energy Storage Optimizer</h1>
           <p className="mt-3 text-xs leading-5 text-slate-300">Dispatch planning workspace for BESS forecast, risk, and revenue review.</p>
         </div>

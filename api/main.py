@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import math
 import sys
 import threading
@@ -50,6 +51,8 @@ DERATING_SCENARIOS = {
 }
 
 Scenario = Literal["Base", "Mild Degradation", "Severe Degradation"]
+PUBLIC_ERROR_MESSAGE = "Oops, there must be something wrong. Please retry."
+logger = logging.getLogger(__name__)
 
 
 class OptimizeRequest(BaseModel):
@@ -79,7 +82,7 @@ class RuntimeState:
 
 state = RuntimeState()
 
-app = FastAPI(title="BESS Optimizer API", version="1.0.0")
+app = FastAPI(title="LogicVolt API", version="1.0.0")
 app.include_router(oidc_router, prefix="/auth/oidc")
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.add_middleware(
@@ -177,6 +180,7 @@ def _train_models_in_background() -> None:
             state.models = models
             state.model_status = "ready"
     except Exception as exc:  # pragma: no cover - surfaced through /status
+        logger.exception("Model training failed")
         with state.lock:
             state.model_status = "error"
             state.model_error = str(exc)
@@ -202,6 +206,7 @@ async def startup() -> None:
             thread = threading.Thread(target=_train_models_in_background, daemon=True)
             thread.start()
     except Exception as exc:  # pragma: no cover - surfaced through /status
+        logger.exception("Application startup failed")
         with state.lock:
             state.model_status = "error"
             state.model_error = str(exc)
@@ -312,9 +317,8 @@ def _snapshot_models() -> dict[str, TrainResult]:
     with state.lock:
         models = state.models
         status = state.model_status
-        error = state.model_error
     if models is None or status != "ready":
-        detail = "models are still training" if status != "error" else f"model startup failed: {error}"
+        detail = "models are still training" if status != "error" else PUBLIC_ERROR_MESSAGE
         raise HTTPException(status_code=503, detail=detail)
     return models
 
@@ -327,7 +331,9 @@ def _forecast_window() -> tuple[pd.DataFrame, pd.DataFrame, str]:
     if missing:
         raise HTTPException(status_code=500, detail=f"feature matrix is missing model columns: {missing[:5]}")
 
-    window = features.dropna(subset=required_cols).tail(48).copy()
+    # LightGBM handles missing feature values, so keep the latest real price
+    # rows instead of filtering the window down to sparse fully-complete rows.
+    window = features.dropna(subset=[TARGET]).tail(48).copy()
     if len(window) < 48:
         raise HTTPException(status_code=503, detail="not enough complete rows for a 48-hour forecast")
 
@@ -342,7 +348,7 @@ def status(_: AuthenticatedUser = Depends(require_user)) -> dict:
         return {
             "model_ready": state.models is not None and state.model_status == "ready",
             "model_status": state.model_status,
-            "model_error": state.model_error,
+            "model_error": PUBLIC_ERROR_MESSAGE if state.model_status == "error" else None,
             "source": state.source,
             "data_rows": data_rows,
         }

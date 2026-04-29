@@ -5,6 +5,7 @@ import { Bot, ChevronDown, MessageCircle, RefreshCw, Send, Square, X } from "luc
 import { DefaultChatTransport, type UIMessage } from "ai";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { GENERIC_ERROR_MESSAGE } from "@/lib/errors";
 
 function messageText(message: UIMessage) {
   return message.parts
@@ -151,7 +152,7 @@ export function ChatWidget() {
 
         {error ? (
           <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            <p>{error.message || "The assistant could not respond."}</p>
+            <p>{GENERIC_ERROR_MESSAGE}</p>
             <button
               className="mt-2 inline-flex h-8 items-center gap-2 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-100"
               type="button"
