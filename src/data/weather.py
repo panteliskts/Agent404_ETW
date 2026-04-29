@@ -32,7 +32,7 @@ def fetch_weather(start: str, end: str, forecast: bool = False) -> pd.DataFrame:
             "latitude": loc["lat"],
             "longitude": loc["lon"],
             "hourly": ",".join(HOURLY_VARS),
-            "timezone": GR_TIMEZONE,
+            "timezone": "UTC",
         }
         if forecast:
             params["forecast_days"] = 7
@@ -44,7 +44,7 @@ def fetch_weather(start: str, end: str, forecast: bool = False) -> pd.DataFrame:
         data = _fetch(url, params)
         h = data["hourly"]
         df = pd.DataFrame(h)
-        df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(GR_TIMEZONE)
+        df["time"] = pd.to_datetime(df["time"]).dt.tz_localize("UTC").dt.tz_convert(GR_TIMEZONE)
         df = df.set_index("time")
         df.columns = [f"{loc['name'].lower()}_{c}" for c in df.columns]
         frames.append(df)
