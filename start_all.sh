@@ -141,6 +141,10 @@ ensure_frontend_deps() {
     echo "Installing frontend dependencies..."
     (cd "$FRONTEND_DIR" && npm install)
   fi
+  if [[ ! -x "$FRONTEND_DIR/node_modules/.bin/vercel" ]]; then
+    echo "Installing Vercel CLI..."
+    (cd "$FRONTEND_DIR" && npm install vercel --no-save)
+  fi
 }
 
 port_is_open() {
@@ -223,7 +227,14 @@ else
   echo "Starting frontend at $FRONTEND_URL"
   (
     cd "$FRONTEND_DIR"
-    INTERNAL_API_URL="$API_URL" NEXT_PUBLIC_API_URL="$FRONTEND_API_URL" npm run dev -- --hostname "$FRONTEND_HOST" --port "$FRONTEND_PORT"
+    VERCEL_BIN="$FRONTEND_DIR/node_modules/.bin/vercel"
+    if [[ -x "$VERCEL_BIN" ]]; then
+      INTERNAL_API_URL="$API_URL" NEXT_PUBLIC_API_URL="$FRONTEND_API_URL" \
+        "$VERCEL_BIN" dev --listen "${FRONTEND_HOST}:${FRONTEND_PORT}" --yes
+    else
+      INTERNAL_API_URL="$API_URL" NEXT_PUBLIC_API_URL="$FRONTEND_API_URL" \
+        npm run dev -- --hostname "$FRONTEND_HOST" --port "$FRONTEND_PORT"
+    fi
   ) >"$LOG_DIR/frontend.log" 2>&1 &
   PIDS+=("$!")
 fi
