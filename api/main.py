@@ -265,6 +265,18 @@ def mfa_setup(user: AuthenticatedUser = Depends(require_user)) -> dict:
     return {"secret": secret, "qr_svg": qr_svg, "enabled": False}
 
 
+@app.get("/auth/mfa/status")
+def mfa_status(user: AuthenticatedUser = Depends(require_user)) -> dict:
+    return {"enabled": mfa_module.is_enabled(user.username)}
+
+
+@app.post("/auth/mfa/disable")
+def mfa_disable(user: AuthenticatedUser = Depends(require_user)) -> dict:
+    mfa_module.disable(user.username)
+    audit.log(action="mfa_disabled", user=user.username, resource="auth")
+    return {"ok": True, "enabled": False}
+
+
 @app.post("/auth/mfa/enable")
 def mfa_enable(body: dict, user: AuthenticatedUser = Depends(require_user)) -> dict:
     totp_code = str(body.get("totp_code", ""))
@@ -411,6 +423,56 @@ def optimize(
         },
     )
     return result
+
+
+@app.get("/data-feeds")
+def data_feeds(_: AuthenticatedUser = Depends(require_viewer)) -> dict:
+    """Per-feed health view used by the Onboarding page."""
+    with state.lock:
+        df = state.raw_data
+        source = state.source
+        data_rows = 0 if df is None else len(df)
+
+    if df is None:
+        feeds = []
+        last_observation: str | None = None
+    else:
+        last_observation = _iso(df.index.max())
+        cols = set(df.columns)
+        price_cols = {"dam_price_eur_mwh", "price_eur_mwh"}
+        wx_cols = {c for c in cols if any(p in c.lower() for p in ("temp", "wind", "ghi", "irrad", "weather", "athens", "thess", "patras"))}
+        load_cols = {c for c in cols if "load" in c.lower() or "res" in c.lower()}
+        fuel_cols = {c for c in cols if "ttf" in c.lower() or "eua" in c.lower()}
+
+        def _feed(name: str, detail: str, columns: set[str]) -> dict:
+            available = sorted(columns & cols)
+            non_null = int(df[available].notna().any(axis=1).sum()) if available else 0
+            return {
+                "name": name,
+                "detail": detail,
+                "status": (
+                    "Live" if source == "live" and non_null > 0 else
+                    "Cached" if source == "cache" and non_null > 0 else
+                    "Demo" if non_null > 0 else
+                    "Unavailable"
+                ),
+                "rows": non_null,
+                "columns": available,
+            }
+
+        feeds = [
+            _feed("HEnEx / ENTSO-E DAM", "Day-Ahead Market clearing prices (€/MWh)", price_cols),
+            _feed("Open-Meteo Weather", "Temperature, wind, irradiance for GR zones", wx_cols),
+            _feed("IPTO Load & RES", "Demand and renewable forecast signals", load_cols),
+            _feed("TTF / EUA Fuels", "Gas + carbon market context for SRMC", fuel_cols),
+        ]
+
+    return {
+        "source": source,
+        "data_rows": data_rows,
+        "last_observation": last_observation,
+        "feeds": feeds,
+    }
 
 
 @app.get("/feature-importance")

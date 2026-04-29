@@ -24,18 +24,26 @@ import {
   isUnauthorizedError,
   login as loginRequest,
   logout as logoutRequest,
-  postOptimize
+  postOptimize,
+  verifyMfa
 } from "@/lib/api";
 import type {
   AuthUser,
   FeatureImportanceResponse,
   ForecastResponse,
+  LoginResponse,
   OptimizeRequest,
   OptimizeResponse,
   Scenario,
   Source,
   StatusResponse
 } from "@/types/api";
+
+const SCENARIO_PRESETS: Record<string, Partial<OptimizeRequest>> = {
+  "solar-curtailment": { scenario: "Mild Degradation", initial_soc_pct: 25 },
+  "evening-scarcity": { scenario: "Base", initial_soc_pct: 70 },
+  "high-degradation": { scenario: "Severe Degradation", degradation_eur_per_mwh: 12 }
+};
 
 const DEFAULT_PARAMS: OptimizeRequest = {
   capacity_mwh: 100,
@@ -355,19 +363,31 @@ function LoginPage({
   error,
   isCheckingAuth,
   isSubmitting,
-  onLogin
+  mfaChallenge,
+  onLogin,
+  onVerifyMfa,
+  onCancelMfa
 }: {
   error: string | null;
   isCheckingAuth: boolean;
   isSubmitting: boolean;
+  mfaChallenge: { mfa_token: string } | null;
   onLogin: (username: string, password: string) => Promise<void>;
+  onVerifyMfa: (totp_code: string) => Promise<void>;
+  onCancelMfa: () => void;
 }) {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onLogin(username, password);
+  }
+
+  async function handleMfaSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onVerifyMfa(totpCode);
   }
 
   return (
@@ -392,45 +412,87 @@ function LoginPage({
           <p className="mt-2 text-sm leading-6 text-slate-600">Use your authorized application credentials to access the optimizer.</p>
         </div>
 
-        <form className="mt-6 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Username</span>
-            <input
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-              autoComplete="username"
-              value={username}
-              disabled={isCheckingAuth || isSubmitting}
-              onChange={(event) => setUsername(event.target.value)}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Password</span>
-            <input
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
-              autoComplete="current-password"
-              type="password"
-              value={password}
-              disabled={isCheckingAuth || isSubmitting}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-
-          {error ? (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
-              {error}
+        {mfaChallenge ? (
+          <form className="mt-6 space-y-4" onSubmit={(event) => void handleMfaSubmit(event)}>
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800">
+              Multi-factor required. Enter the 6-digit code from your authenticator.
             </div>
-          ) : null}
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">TOTP code</span>
+              <input
+                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-center text-lg tabular-nums tracking-[0.6em] text-slate-950 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={6}
+                value={totpCode}
+                disabled={isSubmitting}
+                onChange={(event) => setTotpCode(event.target.value.replace(/[^0-9]/g, ""))}
+              />
+            </label>
 
-          <button
-            className="enterprise-button flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed"
-            type="submit"
-            disabled={isCheckingAuth || isSubmitting}
-          >
-            {isCheckingAuth || isSubmitting ? <Spinner tone="white" /> : null}
-            Sign in
-          </button>
-        </form>
+            {error ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              className="enterprise-button flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed"
+              type="submit"
+              disabled={isSubmitting || totpCode.length !== 6}
+            >
+              {isSubmitting ? <Spinner tone="white" /> : null}
+              Verify and continue
+            </button>
+            <button
+              className="block w-full text-center text-xs font-semibold text-slate-500 transition hover:text-slate-800"
+              type="button"
+              onClick={onCancelMfa}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <form className="mt-6 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Username</span>
+              <input
+                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                autoComplete="username"
+                value={username}
+                disabled={isCheckingAuth || isSubmitting}
+                onChange={(event) => setUsername(event.target.value)}
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Password</span>
+              <input
+                className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-950 shadow-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                autoComplete="current-password"
+                type="password"
+                value={password}
+                disabled={isCheckingAuth || isSubmitting}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+
+            {error ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <button
+              className="enterprise-button flex w-full items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed"
+              type="submit"
+              disabled={isCheckingAuth || isSubmitting}
+            >
+              {isCheckingAuth || isSubmitting ? <Spinner tone="white" /> : null}
+              Sign in
+            </button>
+          </form>
+        )}
         </div>
       </section>
     </main>

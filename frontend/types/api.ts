@@ -16,9 +16,86 @@ export type LoginRequest = {
   password: string;
 };
 
-export type LoginResponse = AuthSessionResponse & {
+export type LoginResponse =
+  | (AuthSessionResponse & {
+      csrf_token: string;
+      session_expires_at: number;
+      mfa_required?: false;
+    })
+  | {
+      mfa_required: true;
+      mfa_token: string;
+    };
+
+export type MfaVerifyRequest = {
+  mfa_token: string;
+  totp_code: string;
+};
+
+export type MfaVerifyResponse = {
+  user: AuthUser;
   csrf_token: string;
   session_expires_at: number;
+};
+
+export type MfaStatusResponse = { enabled: boolean };
+
+export type MfaSetupResponse = {
+  secret: string;
+  qr_svg: string | null;
+  enabled: boolean;
+};
+
+export type ApiKey = {
+  id: string;
+  prefix: string;
+  label: string;
+  role: "viewer" | "operator" | "admin" | string;
+  created_at: number;
+  last_used: number | null;
+  revoked: boolean;
+};
+
+export type ApiKeyListResponse = { keys: ApiKey[] };
+
+export type ApiKeyCreateRequest = {
+  label?: string;
+  role?: "viewer" | "operator" | "admin";
+};
+
+export type ApiKeyCreateResponse = {
+  key: string;
+  metadata: ApiKey;
+};
+
+export type AuditEntry = {
+  id: number;
+  timestamp: number;
+  user: string;
+  action: string;
+  resource: string;
+  ip: string;
+  details: Record<string, unknown>;
+};
+
+export type AuditResponse = {
+  entries: AuditEntry[];
+  count: number;
+};
+
+export type DataFeed = {
+  name: string;
+  detail: string;
+  status: "Live" | "Cached" | "Demo" | "Unavailable" | string;
+  rows: number;
+  columns: string[];
+};
+
+export type DataFeedsResponse = {
+  source: Source | string;
+  data_rows: number;
+  last_observation: string | null;
+  feeds: DataFeed[];
 };
 
 export type LogoutResponse = {
