@@ -226,6 +226,59 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     return df.dropna(subset=["dam_price_eur_mwh"])
 
 
+# Columns whose values are NOT known at next-day DAM gate close (D-1 ~12:00).
+# They are realized HEnEx outputs published after the day; for honest next-day
+# forecasting we either drop them or use only their 1-day lag.
+_LEAKY_REALIZED_COLS = (
+    "gen_lignite_mw", "gen_gas_mw", "gen_hydro_mw",
+    "gen_renewables_mw", "gen_crete_renewables_mw", "gen_crete_conventional_mw",
+    "production_total_mw",
+    "load_hv_mw", "load_mv_mw", "load_lv_mw", "system_losses_mw",
+    "load_crete_mw", "demand_total_mw", "load_total_mw", "load_bess_mw",
+    "renewables_buy_mw",
+    "volume_mainland_mwh",
+    "res_share", "net_export_mw", "gas_share_production",
+)
+
+
+def build_clean_dataset(start: str = TRAIN_START, lag_realized: int = 96) -> pd.DataFrame:
+    """Strict gate-close-feasible feature set, target ~35 columns."""
+    df = build_dataset(start=start, realistic_lags_only=True)
+
+    # Replace leaky cols with their 24h lag (yesterday-at-this-hour).
+    for col in _LEAKY_REALIZED_COLS:
+        if col in df.columns:
+            df[f"{col}_lag{lag_realized}"] = df[col].shift(lag_realized)
+            df = df.drop(columns=[col])
+
+    # Drop redundant calendar — sin/cos pairs encode the same info.
+    for col in ("minute_of_day", "doy", "hour", "month"):
+        if col in df.columns:
+            df = df.drop(columns=[col])
+
+    # Aggregate weather across cities; drop wind direction & diffuse radiation.
+    cities = ["athens", "thessaloniki", "patras", "crete"]
+    weather_vars = ("temperature_2m", "wind_speed_100m", "cloud_cover", "shortwave_radiation")
+    for var in weather_vars:
+        cols = [f"{c}_{var}" for c in cities if f"{c}_{var}" in df.columns]
+        if cols:
+            df[f"gr_avg_{var}"] = df[cols].mean(axis=1)
+            df[f"gr_std_{var}"] = df[cols].std(axis=1)
+            df = df.drop(columns=cols)
+
+    drop_weather = []
+    for c in cities:
+        for v in ("wind_direction_100m", "direct_radiation", "diffuse_radiation"):
+            col = f"{c}_{v}"
+            if col in df.columns:
+                drop_weather.append(col)
+    if drop_weather:
+        df = df.drop(columns=drop_weather)
+
+    df = df.dropna(subset=[PRICE_COL])
+    return df
+
+
 def save() -> str:
     df = build_dataset()
     path = PROCESSED_DIR / "features.parquet"
