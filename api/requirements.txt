@@ -1,3 +1,9 @@
 fastapi
 uvicorn[standard]
 pydantic>=2
+# Security additions
+argon2-cffi>=23.1          # Argon2id password / API-key hashing
+cryptography>=42.0         # AES-256-GCM encryption at rest
+pyotp>=2.9                 # RFC 6238 TOTP / MFA
+qrcode[svg]>=7.4           # SVG QR codes for authenticator app setup
+httpx>=0.27                # Async HTTP client for OIDC token exchange

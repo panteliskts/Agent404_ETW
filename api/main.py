@@ -33,6 +33,9 @@ from api.security import (  # noqa: E402
     settings,
     verify_credentials,
 )
+from api import audit, mfa as mfa_module, api_keys as api_keys_module  # noqa: E402
+from api.rbac import require_admin, require_operator, require_viewer  # noqa: E402
+from api.oauth import router as oidc_router  # noqa: E402
 from config import BatterySpec
 from src import forecaster, scheduler
 from src.data_sources import load_market_data
@@ -77,6 +80,7 @@ class RuntimeState:
 state = RuntimeState()
 
 app = FastAPI(title="BESS Optimizer API", version="1.0.0")
+app.include_router(oidc_router, prefix="/auth/oidc")
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.add_middleware(
     CORSMiddleware,
@@ -209,17 +213,65 @@ def health() -> dict:
 
 
 @app.post("/auth/login")
-def login(payload: LoginRequest, response: Response) -> dict:
+def login(payload: LoginRequest, request: Request, response: Response) -> dict:
+    ip = client_ip(request)
     if not verify_credentials(payload.username, payload.password):
+        audit.log(action="login_failed", user=payload.username, ip=ip, resource="auth")
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    session_token, csrf_token, expires_at = create_session_token(payload.username)
+    if mfa_module.is_enabled(payload.username):
+        pending_token = mfa_module.create_pending_token(payload.username)
+        audit.log(action="login_mfa_pending", user=payload.username, ip=ip, resource="auth")
+        return {"mfa_required": True, "mfa_token": pending_token}
+
+    session_token, csrf_token, expires_at = create_session_token(
+        payload.username, role=settings.auth_role
+    )
     set_auth_cookies(response, session_token, csrf_token, expires_at)
+    audit.log(action="login", user=payload.username, ip=ip, resource="auth")
     return {
-        "user": {"username": payload.username},
+        "user": {"username": payload.username, "role": settings.auth_role},
         "csrf_token": csrf_token,
         "session_expires_at": expires_at,
     }
+
+
+@app.post("/auth/mfa/verify")
+def mfa_verify(body: dict, response: Response) -> dict:
+    mfa_token = str(body.get("mfa_token", ""))
+    totp_code = str(body.get("totp_code", ""))
+
+    username = mfa_module.consume_pending_token(mfa_token)
+    if username is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired MFA token")
+
+    if not mfa_module.verify(username, totp_code):
+        raise HTTPException(status_code=401, detail="Invalid TOTP code")
+
+    session_token, csrf_token, expires_at = create_session_token(username, role=settings.auth_role)
+    set_auth_cookies(response, session_token, csrf_token, expires_at)
+    audit.log(action="login_mfa_ok", user=username, resource="auth")
+    return {
+        "user": {"username": username, "role": settings.auth_role},
+        "csrf_token": csrf_token,
+        "session_expires_at": expires_at,
+    }
+
+
+@app.get("/auth/mfa/setup")
+def mfa_setup(user: AuthenticatedUser = Depends(require_user)) -> dict:
+    secret = mfa_module.provision(user.username)
+    qr_svg = mfa_module.get_qr_svg(user.username)
+    return {"secret": secret, "qr_svg": qr_svg, "enabled": False}
+
+
+@app.post("/auth/mfa/enable")
+def mfa_enable(body: dict, user: AuthenticatedUser = Depends(require_user)) -> dict:
+    totp_code = str(body.get("totp_code", ""))
+    if not mfa_module.enable(user.username, totp_code):
+        raise HTTPException(status_code=400, detail="TOTP code verification failed")
+    audit.log(action="mfa_enabled", user=user.username, resource="auth")
+    return {"ok": True, "enabled": True}
 
 
 @app.get("/auth/me")
@@ -228,7 +280,8 @@ def current_user(user: AuthenticatedUser = Depends(require_user)) -> dict:
 
 
 @app.post("/auth/logout")
-def logout(response: Response, _: AuthenticatedUser = Depends(require_user)) -> dict:
+def logout(request: Request, response: Response, user: AuthenticatedUser = Depends(require_user)) -> dict:
+    audit.log(action="logout", user=user.username, ip=client_ip(request), resource="auth")
     clear_auth_cookies(response)
     return {"ok": True}
 
@@ -296,7 +349,11 @@ def forecast(_: AuthenticatedUser = Depends(require_user)) -> dict:
 
 
 @app.post("/optimize")
-def optimize(payload: OptimizeRequest | None = None, _: AuthenticatedUser = Depends(require_user)) -> dict:
+def optimize(
+    request: Request,
+    payload: OptimizeRequest | None = None,
+    user: AuthenticatedUser = Depends(require_operator),
+) -> dict:
     payload = payload or OptimizeRequest()
     battery = _battery_from_request(payload)
     _, predictions, source = _forecast_window()
@@ -330,7 +387,7 @@ def optimize(payload: OptimizeRequest | None = None, _: AuthenticatedUser = Depe
             }
         )
 
-    return {
+    result = {
         "kpis": {
             "net_profit_eur": net_profit,
             "gross_revenue_eur": gross_revenue,
@@ -342,10 +399,22 @@ def optimize(payload: OptimizeRequest | None = None, _: AuthenticatedUser = Depe
         "schedule": rows,
         "source": source,
     }
+    audit.log(
+        action="optimize",
+        user=user.username,
+        ip=client_ip(request),
+        resource="schedule",
+        details={
+            "scenario": payload.scenario,
+            "net_profit_eur": round(net_profit, 2),
+            "capacity_mwh": payload.capacity_mwh,
+        },
+    )
+    return result
 
 
 @app.get("/feature-importance")
-def feature_importance(_: AuthenticatedUser = Depends(require_user)) -> dict:
+def feature_importance(_: AuthenticatedUser = Depends(require_viewer)) -> dict:
     models = _snapshot_models()
     q50 = models.get("q50")
     if q50 is None:
@@ -361,3 +430,56 @@ def feature_importance(_: AuthenticatedUser = Depends(require_user)) -> dict:
         "features": [feature for feature, _ in ranked],
         "gain": [float(gain) for _, gain in ranked],
     }
+
+
+# ── API key management (admin-only) ──────────────────────────────────────────
+
+class ApiKeyCreateRequest(BaseModel):
+    label: str = Field(default="", max_length=120)
+    role: str = Field(default="viewer", pattern="^(viewer|operator|admin)$")
+
+
+@app.get("/api-keys")
+def list_api_keys(user: AuthenticatedUser = Depends(require_admin)) -> dict:
+    return {"keys": api_keys_module.list_keys(user.username)}
+
+
+@app.post("/api-keys", status_code=201)
+def create_api_key(body: ApiKeyCreateRequest, request: Request, user: AuthenticatedUser = Depends(require_admin)) -> dict:
+    plaintext, meta = api_keys_module.create(user.username, label=body.label, role=body.role)
+    audit.log(
+        action="api_key_created",
+        user=user.username,
+        ip=client_ip(request),
+        resource="api_key",
+        details={"key_id": meta["id"], "label": body.label, "role": body.role},
+    )
+    return {"key": plaintext, "metadata": meta}
+
+
+@app.delete("/api-keys/{key_id}")
+def revoke_api_key(key_id: str, request: Request, user: AuthenticatedUser = Depends(require_admin)) -> dict:
+    if not api_keys_module.revoke(key_id, user.username):
+        raise HTTPException(status_code=404, detail="API key not found")
+    audit.log(
+        action="api_key_revoked",
+        user=user.username,
+        ip=client_ip(request),
+        resource="api_key",
+        details={"key_id": key_id},
+    )
+    return {"ok": True}
+
+
+# ── audit log viewer (admin-only) ─────────────────────────────────────────────
+
+@app.get("/audit")
+def get_audit_log(
+    user_filter: str | None = None,
+    action_filter: str | None = None,
+    since: int | None = None,
+    limit: int = 200,
+    _: AuthenticatedUser = Depends(require_admin),
+) -> dict:
+    entries = audit.query(user=user_filter, action=action_filter, since=since, limit=limit)
+    return {"entries": entries, "count": len(entries)}
