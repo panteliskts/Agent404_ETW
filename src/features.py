@@ -7,8 +7,16 @@ from config import GR_TIMEZONE, MTU_SWITCH_DATE, PROCESSED_DIR, RAW_DIR
 
 TRAIN_START = "2024-01-01"
 
+# Full lag set — used for in-sample / 15-min-ahead style backtests.
 LAG_PERIODS_15M = [1, 4, 8, 24, 48, 96, 96 * 7]
 ROLL_WINDOWS_15M = [4, 16, 96]
+
+# Realistic next-day lag set — only data that is genuinely available at DAM
+# gate-closure for day D (day D-1 ~12:00). Lag of 96 = exactly 1 day, lag 672
+# = 1 week. Rolling stats are shifted by 96 so they look only at days <= D-1.
+LAG_PERIODS_REALISTIC = [96, 96 * 7]
+ROLL_WINDOWS_REALISTIC = [96, 96 * 7]
+ROLL_SHIFT_REALISTIC = 96
 
 PRICE_COL = "dam_price_eur_mwh"
 
@@ -79,10 +87,10 @@ def _add_lags(df: pd.DataFrame, col: str, lags: list[int]) -> pd.DataFrame:
     return df
 
 
-def _add_rolls(df: pd.DataFrame, col: str, windows: list[int]) -> pd.DataFrame:
+def _add_rolls(df: pd.DataFrame, col: str, windows: list[int], shift: int = 1) -> pd.DataFrame:
     for w in windows:
-        df[f"{col}_rollmean{w}"] = df[col].shift(1).rolling(w).mean()
-        df[f"{col}_rollstd{w}"] = df[col].shift(1).rolling(w).std()
+        df[f"{col}_rollmean{w}"] = df[col].shift(shift).rolling(w).mean()
+        df[f"{col}_rollstd{w}"] = df[col].shift(shift).rolling(w).std()
     return df
 
 
@@ -95,7 +103,7 @@ def _load_henex() -> pd.DataFrame:
     return df
 
 
-def build_dataset(start: str = TRAIN_START) -> pd.DataFrame:
+def build_dataset(start: str = TRAIN_START, realistic_lags_only: bool = False) -> pd.DataFrame:
     print("[features] loading HEnEx ...")
     henex = _load_henex()
     if henex.empty:
@@ -141,8 +149,20 @@ def build_dataset(start: str = TRAIN_START) -> pd.DataFrame:
     if {"ttf_eur_mwh", "eua_eur_t"}.issubset(df.columns):
         df["ccgt_srmc_eur_mwh"] = df["ttf_eur_mwh"] * 2.0 + df["eua_eur_t"] * 0.37
 
-    df = _add_lags(df, PRICE_COL, LAG_PERIODS_15M)
-    df = _add_rolls(df, PRICE_COL, ROLL_WINDOWS_15M)
+    if {"load_forecast_mw", "forecast_solar_mw", "forecast_wind_onshore_mw"}.issubset(df.columns):
+        df["res_total_forecast_mw"] = (
+            df["forecast_solar_mw"].fillna(0) + df["forecast_wind_onshore_mw"].fillna(0)
+        )
+        df["residual_load_forecast_mw"] = df["load_forecast_mw"] - df["res_total_forecast_mw"]
+
+    df = _add_extra_composites(df)
+
+    if realistic_lags_only:
+        df = _add_lags(df, PRICE_COL, LAG_PERIODS_REALISTIC)
+        df = _add_rolls(df, PRICE_COL, ROLL_WINDOWS_REALISTIC, shift=ROLL_SHIFT_REALISTIC)
+    else:
+        df = _add_lags(df, PRICE_COL, LAG_PERIODS_15M)
+        df = _add_rolls(df, PRICE_COL, ROLL_WINDOWS_15M)
 
     df["mtu_15m_active"] = (df.index >= pd.Timestamp(MTU_SWITCH_DATE, tz=GR_TIMEZONE)).astype(int)
 
@@ -154,6 +174,17 @@ def build_dataset(start: str = TRAIN_START) -> pd.DataFrame:
         print(f"  dropping {len(drop_cols)} cols with >70% NaN: {drop_cols}")
         df = df.drop(columns=drop_cols)
 
+    return df
+
+
+# Audit dropped wind/radiation/temperature averages and thermal_gap (near-zero
+# gain). gas_share_production survived (~0.16% gain) and is kept.
+_EXTRA_COMPOSITES = ("gas_share_production",)
+
+
+def _add_extra_composites(df: pd.DataFrame) -> pd.DataFrame:
+    if {"gen_gas_mw", "production_total_mw"}.issubset(df.columns):
+        df["gas_share_production"] = df["gen_gas_mw"] / df["production_total_mw"].replace(0, np.nan)
     return df
 
 
@@ -200,4 +231,9 @@ def save() -> str:
     path = PROCESSED_DIR / "features.parquet"
     df.to_parquet(path)
     print(f"  saved {path}  rows={len(df)}  cols={len(df.columns)}")
+
+    df_real = build_dataset(realistic_lags_only=True)
+    real_path = PROCESSED_DIR / "features_realistic.parquet"
+    df_real.to_parquet(real_path)
+    print(f"  saved {real_path}  rows={len(df_real)}  cols={len(df_real.columns)}")
     return str(path)
