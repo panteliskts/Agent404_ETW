@@ -6,13 +6,15 @@ const config: Config = {
     extend: {
       colors: {
         bess: {
-          blue: "#3b82f6",
-          green: "#22c55e",
-          orange: "#f97316",
-          teal: "#14b8a6",
-          red: "#ef4444",
-          text: "#111827",
-          bg: "#f9fafb"
+          blue: "#1d4ed8",
+          green: "#15803d",
+          orange: "#b45309",
+          teal: "#0f766e",
+          red: "#b91c1c",
+          graphite: "#17202a",
+          steel: "#52616f",
+          text: "#17202a",
+          bg: "#f3f5f7"
         }
       }
     }

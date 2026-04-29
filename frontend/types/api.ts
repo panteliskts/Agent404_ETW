@@ -2,6 +2,29 @@ export type Source = "live" | "cache" | "demo" | "unknown";
 
 export type Scenario = "Base" | "Mild Degradation" | "Severe Degradation";
 
+export type AuthUser = {
+  username: string;
+};
+
+export type AuthSessionResponse = {
+  user: AuthUser;
+  csrf_token?: string;
+};
+
+export type LoginRequest = {
+  username: string;
+  password: string;
+};
+
+export type LoginResponse = AuthSessionResponse & {
+  csrf_token: string;
+  session_expires_at: number;
+};
+
+export type LogoutResponse = {
+  ok: boolean;
+};
+
 export type StatusResponse = {
   model_ready: boolean;
   model_status: "booting" | "training" | "ready" | "error" | string;

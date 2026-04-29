@@ -10,14 +10,29 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
+from starlette.responses import JSONResponse
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from api.security import (  # noqa: E402
+    AuthenticatedUser,
+    api_rate_limiter,
+    clear_auth_cookies,
+    client_ip,
+    create_session_token,
+    login_rate_limiter,
+    require_user,
+    security_headers,
+    set_auth_cookies,
+    settings,
+    verify_credentials,
+)
 from config import BatterySpec
 from src import forecaster, scheduler
 from src.data_sources import load_market_data
@@ -43,6 +58,11 @@ class OptimizeRequest(BaseModel):
     scenario: Scenario = "Base"
 
 
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=1, max_length=256)
+
+
 @dataclass
 class RuntimeState:
     raw_data: pd.DataFrame | None = None
@@ -57,13 +77,40 @@ class RuntimeState:
 state = RuntimeState()
 
 app = FastAPI(title="BESS Optimizer API", version="1.0.0")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
 )
+
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    if request.method.upper() != "OPTIONS" and request.url.path != "/health":
+        limiter = login_rate_limiter if request.url.path == "/auth/login" else api_rate_limiter
+        allowed, retry_after = limiter.check(client_ip(request))
+        if not allowed:
+            response = JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded"},
+                headers={"Retry-After": str(retry_after)},
+            )
+            origin = request.headers.get("origin")
+            if origin in settings.allowed_origins:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Vary"] = "Origin"
+            for key, value in security_headers().items():
+                response.headers[key] = value
+            return response
+
+    response = await call_next(request)
+    for key, value in security_headers().items():
+        response.headers.setdefault(key, value)
+    return response
 
 
 def _json_float(value: float | np.floating | None) -> float | None:
@@ -156,6 +203,36 @@ async def startup() -> None:
             state.model_error = str(exc)
 
 
+@app.get("/health")
+def health() -> dict:
+    return {"ok": True}
+
+
+@app.post("/auth/login")
+def login(payload: LoginRequest, response: Response) -> dict:
+    if not verify_credentials(payload.username, payload.password):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    session_token, csrf_token, expires_at = create_session_token(payload.username)
+    set_auth_cookies(response, session_token, csrf_token, expires_at)
+    return {
+        "user": {"username": payload.username},
+        "csrf_token": csrf_token,
+        "session_expires_at": expires_at,
+    }
+
+
+@app.get("/auth/me")
+def current_user(user: AuthenticatedUser = Depends(require_user)) -> dict:
+    return {"user": {"username": user.username}, "csrf_token": user.csrf_token}
+
+
+@app.post("/auth/logout")
+def logout(response: Response, _: AuthenticatedUser = Depends(require_user)) -> dict:
+    clear_auth_cookies(response)
+    return {"ok": True}
+
+
 def _snapshot_data() -> tuple[pd.DataFrame, str, int]:
     with state.lock:
         features = state.features
@@ -194,7 +271,7 @@ def _forecast_window() -> tuple[pd.DataFrame, pd.DataFrame, str]:
 
 
 @app.get("/status")
-def status() -> dict:
+def status(_: AuthenticatedUser = Depends(require_user)) -> dict:
     with state.lock:
         data_rows = 0 if state.raw_data is None else len(state.raw_data)
         return {
@@ -207,7 +284,7 @@ def status() -> dict:
 
 
 @app.get("/forecast")
-def forecast() -> dict:
+def forecast(_: AuthenticatedUser = Depends(require_user)) -> dict:
     window, predictions, _ = _forecast_window()
     return {
         "timestamps": [_iso(ts) for ts in window.index],
@@ -219,7 +296,7 @@ def forecast() -> dict:
 
 
 @app.post("/optimize")
-def optimize(payload: OptimizeRequest | None = None) -> dict:
+def optimize(payload: OptimizeRequest | None = None, _: AuthenticatedUser = Depends(require_user)) -> dict:
     payload = payload or OptimizeRequest()
     battery = _battery_from_request(payload)
     _, predictions, source = _forecast_window()
@@ -268,7 +345,7 @@ def optimize(payload: OptimizeRequest | None = None) -> dict:
 
 
 @app.get("/feature-importance")
-def feature_importance() -> dict:
+def feature_importance(_: AuthenticatedUser = Depends(require_user)) -> dict:
     models = _snapshot_models()
     q50 = models.get("q50")
     if q50 is None:
