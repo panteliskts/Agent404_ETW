@@ -78,11 +78,16 @@ def decide_schedule(
               np.where(df["discharge_mw"] > eps, "discharge", "idle"))
     df["action"] = action
     df["power_mw"] = df["discharge_mw"] - df["charge_mw"]
+    # Per-slot energy and cash: positive = sold (discharge); negative = bought (charge).
+    df["energy_mwh"] = df["power_mw"] * schedule.delta_h
+    df["expected_cashflow_eur"] = df["energy_mwh"] * df["price_q50"]
 
     df = df[
         [
             "action",
             "power_mw",
+            "energy_mwh",
+            "expected_cashflow_eur",
             "charge_mw",
             "discharge_mw",
             "soc_mwh",
@@ -93,6 +98,15 @@ def decide_schedule(
             "confidence",
         ]
     ]
+    total_buy_mwh = float(-df.loc[df["energy_mwh"] < 0, "energy_mwh"].sum())
+    total_sell_mwh = float(df.loc[df["energy_mwh"] > 0, "energy_mwh"].sum())
+    total_cost_eur = float(-df.loc[df["energy_mwh"] < 0, "expected_cashflow_eur"].sum())
+    total_revenue_eur = float(df.loc[df["energy_mwh"] > 0, "expected_cashflow_eur"].sum())
     df.attrs["expected_revenue_eur"] = float(schedule.objective_eur)
+    df.attrs["total_buy_mwh"] = total_buy_mwh
+    df.attrs["total_sell_mwh"] = total_sell_mwh
+    df.attrs["total_cost_eur"] = total_cost_eur
+    df.attrs["total_revenue_eur"] = total_revenue_eur
+    df.attrs["net_cashflow_eur"] = total_revenue_eur - total_cost_eur
     df.attrs["battery"] = asdict(battery)
     return df
