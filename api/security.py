@@ -64,7 +64,7 @@ def load_security_settings() -> SecuritySettings:
         allowed_origins=_split_csv(
             os.getenv("APP_ALLOWED_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000")
         ),
-        allowed_hosts=_split_csv(os.getenv("APP_ALLOWED_HOSTS", "127.0.0.1,localhost")),
+        allowed_hosts=_split_csv(os.getenv("APP_ALLOWED_HOSTS", "127.0.0.1,localhost,::1,testserver")),
         rate_limit_requests=int(os.getenv("APP_RATE_LIMIT_REQUESTS", "240")),
         rate_limit_window_seconds=int(os.getenv("APP_RATE_LIMIT_WINDOW_SECONDS", "60")),
         login_rate_limit_requests=int(os.getenv("APP_LOGIN_RATE_LIMIT_REQUESTS", "8")),

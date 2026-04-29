@@ -4,7 +4,7 @@ import { ChatWidget } from "@/components/chat-widget";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Enterprise BESS Optimizer",
+  title: "LogicVolt",
   description: "Plug-and-play battery energy storage optimization platform"
 };
 

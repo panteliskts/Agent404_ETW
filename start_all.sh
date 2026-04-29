@@ -192,7 +192,7 @@ ensure_frontend_deps
 
 API_URL="http://$API_HOST:$API_PORT"
 FRONTEND_URL="http://$FRONTEND_HOST:$FRONTEND_PORT"
-FRONTEND_API_URL="${NEXT_PUBLIC_API_URL:-$API_URL}"
+FRONTEND_API_URL="${NEXT_PUBLIC_API_URL:-}"
 
 if port_is_open "$API_HOST" "$API_PORT"; then
   if is_truthy "$REUSE_EXISTING_SERVICES"; then
@@ -223,7 +223,7 @@ else
   echo "Starting frontend at $FRONTEND_URL"
   (
     cd "$FRONTEND_DIR"
-    NEXT_PUBLIC_API_URL="$FRONTEND_API_URL" npm run dev -- --hostname "$FRONTEND_HOST" --port "$FRONTEND_PORT"
+    INTERNAL_API_URL="$API_URL" NEXT_PUBLIC_API_URL="$FRONTEND_API_URL" npm run dev -- --hostname "$FRONTEND_HOST" --port "$FRONTEND_PORT"
   ) >"$LOG_DIR/frontend.log" 2>&1 &
   PIDS+=("$!")
 fi

@@ -18,8 +18,9 @@ import type {
   OptimizeResponse,
   StatusResponse
 } from "@/types/api";
+import { GENERIC_ERROR_MESSAGE } from "@/lib/errors";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 const CSRF_COOKIE = "bess_csrf";
 const CSRF_HEADER = "X-CSRF-Token";
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -42,9 +43,6 @@ export function isUnauthorizedError(error: unknown) {
 function apiBase() {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
-  }
-  if (typeof window !== "undefined") {
-    return `http://${window.location.hostname}:8000`;
   }
   return API_BASE;
 }
@@ -77,23 +75,23 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set(CSRF_HEADER, activeCsrfToken);
   }
 
-  const response = await fetch(`${apiBase()}${path}`, {
-    ...init,
-    credentials: "include",
-    headers
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase()}${path}`, {
+      ...init,
+      credentials: "include",
+      headers
+    });
+  } catch {
+    throw new ApiError(GENERIC_ERROR_MESSAGE, 0);
+  }
 
   if (!response.ok) {
-    let message = `${response.status} ${response.statusText}`;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) {
-        message = body.detail;
-      }
-    } catch {
-      // Keep the HTTP status message.
-    }
-    throw new ApiError(message, response.status);
+    throw new ApiError(GENERIC_ERROR_MESSAGE, response.status);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;

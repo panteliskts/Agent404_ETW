@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE_PATH = ROOT / "data" / "cache" / "market_cache.parquet"
 DEMO_PATH  = ROOT / "data" / "demo"  / "market_demo.parquet"
 WEATHER_GLOB = "weather_*.parquet"
+LOAD_FORECAST_COL = "load_forecast_mw"
+RES_FORECAST_COL = "res_total_forecast_mw"
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +94,39 @@ def _build_synthetic_load_res(idx: pd.DatetimeIndex) -> pd.DataFrame:
     )
 
 
+def _renewable_forecast_columns(df: pd.DataFrame) -> list[str]:
+    return [
+        col
+        for col in df.columns
+        if col.startswith("forecast_")
+        and col.endswith("_mw")
+        and ("solar" in col or "wind" in col)
+    ]
+
+
+def _ensure_model_driver_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure runtime data has the load/RES drivers expected by saved models."""
+    if df.empty:
+        return df
+
+    df = df.copy()
+
+    if RES_FORECAST_COL not in df.columns:
+        res_cols = _renewable_forecast_columns(df)
+        if res_cols:
+            df[RES_FORECAST_COL] = df[res_cols].sum(axis=1, min_count=1)
+
+    missing_load_res = LOAD_FORECAST_COL not in df.columns or RES_FORECAST_COL not in df.columns
+    if missing_load_res:
+        synthetic = _build_synthetic_load_res(df.index)
+        if LOAD_FORECAST_COL not in df.columns:
+            df[LOAD_FORECAST_COL] = synthetic[LOAD_FORECAST_COL]
+        if RES_FORECAST_COL not in df.columns:
+            df[RES_FORECAST_COL] = synthetic[RES_FORECAST_COL]
+
+    return df
+
+
 def _make_demo() -> pd.DataFrame:
     from config import GR_TIMEZONE, RAW_DIR
 
@@ -142,7 +177,7 @@ def load_market_data() -> tuple[pd.DataFrame, str]:
     # 1. Live ENTSO-E
     try:
         from config import ENTSOE_API_KEY, GR_TIMEZONE, RAW_DIR
-        from src.data.entsoe_client import fetch_dam_prices
+        from src.data.entsoe_client import fetch_dam_prices, fetch_load_forecast, fetch_wind_solar_forecast
         from src.data.fuels import fetch_fuels
         from src.data.weather import fetch_weather
 
@@ -153,10 +188,21 @@ def load_market_data() -> tuple[pd.DataFrame, str]:
         start = end - pd.Timedelta(days=90)
         s, e  = start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
-        dam  = fetch_dam_prices(s, e).to_frame()
-        wx   = fetch_weather(s, e)
+        dam = fetch_dam_prices(s, e).to_frame()
+        try:
+            load = fetch_load_forecast(s, e).to_frame()
+        except Exception as exc:
+            print(f"[data_sources] load forecast skipped: {exc}")
+            load = pd.DataFrame(index=dam.index)
+        try:
+            res = fetch_wind_solar_forecast(s, e)
+        except Exception as exc:
+            print(f"[data_sources] RES forecast skipped: {exc}")
+            res = pd.DataFrame(index=dam.index)
+        wx = fetch_weather(s, e)
         fuel = fetch_fuels(s, e)
-        df   = dam.join(wx, how="left").join(fuel, how="left")
+        df = dam.join(load, how="left").join(res, how="left").join(wx, how="left").join(fuel, how="left")
+        df = _ensure_model_driver_columns(df)
         df.to_parquet(CACHE_PATH)
         return df, "live"
     except Exception as exc:
@@ -165,7 +211,7 @@ def load_market_data() -> tuple[pd.DataFrame, str]:
     # 2. Parquet cache
     if CACHE_PATH.exists():
         try:
-            return pd.read_parquet(CACHE_PATH), "cache"
+            return _ensure_model_driver_columns(pd.read_parquet(CACHE_PATH)), "cache"
         except Exception as exc:
             print(f"[data_sources] cache load failed: {exc}")
 

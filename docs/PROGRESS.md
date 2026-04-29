@@ -1,4 +1,4 @@
-# BESS Optimizer — Build Progress
+# LogicVolt — Build Progress
 
 ## Architecture
 

@@ -1,25 +1,38 @@
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { createGroq } from "@ai-sdk/groq";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import { GENERIC_ERROR_MESSAGE } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
 const MAX_MESSAGES = 16;
 const MAX_TEXT_LENGTH = 4_000;
+const KNOWLEDGE_BASE_PATHS = [
+  path.resolve(process.cwd(), "..", "docs", "CHATBOT_KNOWLEDGE_BASE.md"),
+  path.resolve(process.cwd(), "docs", "CHATBOT_KNOWLEDGE_BASE.md")
+];
 
-export const SYSTEM_PROMPT = `
+function loadKnowledgeBase() {
+  const knowledgePath = KNOWLEDGE_BASE_PATHS.find((candidate) => existsSync(candidate));
+  if (!knowledgePath) {
+    return "Knowledge base file not found. Ask the user to verify docs/CHATBOT_KNOWLEDGE_BASE.md exists.";
+  }
+  return readFileSync(knowledgePath, "utf8");
+}
+
+const SYSTEM_PROMPT = `
 You are the in-app AI assistant for this product.
 
 Answer clearly and concisely using the application documentation below as your primary source of truth.
 If the documentation does not contain the answer, say what is missing and offer a practical next step.
 Do not invent product capabilities, prices, contracts, operational limits, or compliance claims.
 
-Paste your app documentation between the lines below.
-
 ---
-
-
+${loadKnowledgeBase()}
 ---
 `.trim();
 
@@ -28,8 +41,11 @@ type ChatBody = {
 };
 
 function jsonError(message: string, status: number) {
+  if (status >= 500) {
+    console.error(message);
+  }
   return Response.json(
-    { error: message },
+    { error: GENERIC_ERROR_MESSAGE },
     {
       status,
       headers: {
@@ -124,7 +140,7 @@ export async function POST(request: Request) {
     },
     onError(error) {
       console.error("Groq chat route failed", error);
-      return "The assistant could not respond right now.";
+      return GENERIC_ERROR_MESSAGE;
     }
   });
 }

@@ -1,4 +1,4 @@
-# ETW
+# LogicVolt
 
 ## Quick Start
 
