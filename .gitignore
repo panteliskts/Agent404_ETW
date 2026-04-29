@@ -30,6 +30,11 @@ htmlcov/
 .coverage
 coverage.xml
 
+# ── Frontend ───────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+
 # ── Jupyter ─────────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/
 *.ipynb_checkpoints
@@ -45,6 +50,9 @@ data/processed/
 *.hdf5
 *.db
 *.sqlite
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/tsconfig.json
 
 # ── ML models & artefacts ────────────────────────────────────────────────────────
 models/
