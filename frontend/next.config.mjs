@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  outputFileTracingIncludes: {
+    "/api/chat": ["../docs/CHATBOT_KNOWLEDGE_BASE.md"],
+  },
   async rewrites() {
     if (process.env.NEXT_PUBLIC_API_URL) {
       return [];
