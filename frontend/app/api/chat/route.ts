@@ -4,7 +4,7 @@ import { convertToModelMessages, streamText, type UIMessage } from "ai";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
+const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.1-8b-instant";
 const MAX_MESSAGES = 16;
 const MAX_TEXT_LENGTH = 4_000;
 

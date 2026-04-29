@@ -55,7 +55,6 @@ data/processed/
 !frontend/tsconfig.json
 
 # ── ML models & artefacts ────────────────────────────────────────────────────────
-models/
 *.pkl
 *.pickle
 *.joblib

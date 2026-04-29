@@ -9,6 +9,8 @@ cd /Users/pantelis/Desktop/ETW
 ./start_all.sh
 ```
 
+The launcher automatically uses Doppler when available, so the frontend chat route can read `GROQ_API_KEY` securely.
+
 Then open `http://127.0.0.1:3000`.
 
 Development login is `admin` / `admin` unless you set `APP_AUTH_USERNAME` and `APP_AUTH_PASSWORD` in `.env`.

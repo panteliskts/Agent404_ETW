@@ -16,6 +16,8 @@ cd /Users/pantelis/Desktop/ETW
 ./start_all.sh
 ```
 
+The launcher automatically re-runs itself through Doppler when the Doppler CLI is available, so the API and frontend both receive the same secrets, including `GROQ_API_KEY`.
+
 Then open:
 
 ```text
@@ -29,18 +31,25 @@ Username: admin
 Password: admin
 ```
 
-For a real password, create a `.env` file from `.env.example` and change `APP_AUTH_PASSWORD` and `APP_SECRET_KEY`.
+For a real password, set `APP_AUTH_PASSWORD` and `APP_SECRET_KEY` in Doppler.
 
 Keep that terminal open. Press `Ctrl-C` in that terminal to stop the services started by the launcher.
 
 The launcher will:
 
+- inject Doppler secrets automatically when Doppler is configured
 - create `venv/` if it does not exist
 - install missing Python dependencies from `requirements.txt` and `api/requirements.txt`
 - install frontend dependencies if `frontend/node_modules/` is missing
 - start the API on port `8000`
 - start the frontend on port `3000`
 - write logs to `.logs/api.log` and `.logs/frontend.log`
+
+If Doppler is unavailable and you intentionally want to run with local environment variables only:
+
+```sh
+USE_DOPPLER=0 REQUIRE_GROQ_KEY=0 ./start_all.sh
+```
 
 ## Where To Run NPM
 
@@ -102,6 +111,12 @@ API_PORT=8010 FRONTEND_PORT=3010 ./start_all.sh
 ```
 
 Then open `http://127.0.0.1:3010`.
+
+The launcher does not reuse existing services by default because an old plain `npm run dev` process will not have Doppler secrets. If you know the existing services were already started through Doppler:
+
+```sh
+REUSE_EXISTING_SERVICES=1 ./start_all.sh
+```
 
 If Python dependencies are missing:
 
