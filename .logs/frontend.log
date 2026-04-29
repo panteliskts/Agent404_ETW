@@ -1,0 +1,16 @@
+
+> bess-optimizer-frontend@1.0.0 dev
+> next dev --hostname 127.0.0.1 --port 13080
+
+  ▲ Next.js 14.2.35
+  - Local:        http://127.0.0.1:13080
+  - Network:      http://127.0.0.1:13080
+
+ ✓ Starting...
+ ✓ Ready in 1409ms
+ ○ Compiling / ...
+ ✓ Compiled / in 3.5s (1953 modules)
+ GET / 200 in 18ms
+ ○ Compiling /api/chat ...
+ ✓ Compiled /api/chat in 545ms (185 modules)
+ POST /api/chat 200 in 888ms

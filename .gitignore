@@ -1,189 +1,75 @@
-<<<<<<< HEAD
-# ── Secrets & credentials ──────────────────────────────────────────────────────
-.env
-.env.*
-!.env.example
-
-# ── Python ─────────────────────────────────────────────────────────────────────
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
 *.pyd
 *.pyo
+*.so
 *.egg-info/
-dist/
-build/
 .eggs/
 *.egg
+dist/
+build/
+develop-eggs/
+sdist/
+var/
+wheels/
 MANIFEST
 
-# ── Virtual environments ────────────────────────────────────────────────────────
-venv/
+# ── Virtual environments ──────────────────────────────────────────────────────
+# Covers standard names and local tool-specific envs
 .venv/
+venv/
 env/
 ENV/
+bin/
+lib/
+share/
+pyvenv.cfg
 
-# ── Testing / type checking ─────────────────────────────────────────────────────
+# ── Testing / Linting / Type checking ─────────────────────────────────────────
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+.nox/
+.tox/
 htmlcov/
 .coverage
+.coverage.*
 coverage.xml
+nosetests.xml
+combined_statistics.json
 
-# ── Frontend ───────────────────────────────────────────────────────────────────
-frontend/node_modules/
-frontend/.next/
-frontend/tsconfig.tsbuildinfo
+# ── Frontend (Node/Next.js) ───────────────────────────────────────────────────
+**/node_modules/
+**/dist/
+**/.next/
+**/.cache/
+**/out/
+*.tsbuildinfo
+.npm
+.eslintcache
 
-# ── Jupyter ─────────────────────────────────────────────────────────────────────
-.ipynb_checkpoints/
-*.ipynb_checkpoints
-
-# ── Data files (raw / cached / processed) ───────────────────────────────────────
-data/raw/
-data/cache/
-data/processed/
-*.parquet
-*.csv
-*.json
-*.h5
-*.hdf5
-*.db
-*.sqlite
-!frontend/package.json
-!frontend/package-lock.json
-!frontend/tsconfig.json
-
-# ── ML models & artefacts ────────────────────────────────────────────────────────
-models/
-*.pkl
-*.pickle
-*.joblib
-*.pt
-*.pth
-*.onnx
-*.bin
-
-# ── Reports / generated outputs ──────────────────────────────────────────────────
-reports/
-*.png
-*.pdf
-*.html
-
-# ── Logs ────────────────────────────────────────────────────────────────────────
-logs/
-*.log
-
-# ── IDE / editor ────────────────────────────────────────────────────────────────
+# ── IDE / Editor / System ─────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-
-# ── OS ──────────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# ── Claude / Copilot tooling ─────────────────────────────────────────────────────
-.claude/
-.claude_cache/
-.claude_cache_*/
-
-/data/raw/henex
-=======
-# ── Secrets & credentials ──────────────────────────────────────────────────────
 .env
 .env.*
 !.env.example
 
-# ── Python ─────────────────────────────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyd
-*.pyo
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
-MANIFEST
-
-# ── Virtual environments ────────────────────────────────────────────────────────
-venv/
-.venv/
-env/
-ENV/
-
-# ── Testing / type checking ─────────────────────────────────────────────────────
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
-.coverage
-coverage.xml
-
-# ── Frontend ───────────────────────────────────────────────────────────────────
-frontend/node_modules/
-frontend/.next/
-frontend/tsconfig.tsbuildinfo
-
-# ── Jupyter ─────────────────────────────────────────────────────────────────────
-.ipynb_checkpoints/
-*.ipynb_checkpoints
-
-# ── Data files (raw / cached / processed) ───────────────────────────────────────
-data/raw/
-data/cache/
-data/processed/
-*.parquet
-*.csv
-*.json
-*.h5
-*.hdf5
-*.db
-*.sqlite
-!frontend/package.json
-!frontend/package-lock.json
-!frontend/tsconfig.json
-
-# ── ML models & artefacts ────────────────────────────────────────────────────────
-*.pkl
-*.pickle
-*.joblib
-*.pt
-*.pth
-*.onnx
-*.bin
-
-# ── Reports / generated outputs ──────────────────────────────────────────────────
-reports/
-*.png
-*.pdf
-*.html
-
-# ── Logs ────────────────────────────────────────────────────────────────────────
-logs/
-*.log
-
-# ── IDE / editor ────────────────────────────────────────────────────────────────
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# ── OS ──────────────────────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-
-# ── Claude / Copilot tooling ─────────────────────────────────────────────────────
+# ── AI Tooling (Claude/Copilot/Cursor) ────────────────────────────────────────
 .claude/
 .claude_cache/
 .claude_cache_*/
+.cursorrules
 
-/data/raw/henex
->>>>>>> 5a29ed07fba16f6fafeb478a0b4847a1a14fb73e
-/docs/DOPPLER_GUIDE.md
+# ── Project Specific Data ─────────────────────────────────────────────────────
+# Using a wildcard ensures you don't accidentally check in other raw files later
+/data/raw/*
+!/data/raw/.gitkeep
