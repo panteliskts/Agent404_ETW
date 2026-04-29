@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -9,11 +10,19 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import config
 from config import PROCESSED_DIR, REPORTS_DIR
 from src import evaluate, forecaster
 
 
 def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--models-dir", default=None, help="Override models directory (default: models/)")
+    args = p.parse_args()
+
+    if args.models_dir:
+        config.MODELS_DIR = Path(args.models_dir).resolve()
+
     df = pd.read_parquet(PROCESSED_DIR / "features.parquet")
     booster, feat_cols = forecaster.load()
 
