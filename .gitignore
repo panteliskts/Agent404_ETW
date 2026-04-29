@@ -1,0 +1,83 @@
+# ── Secrets & credentials ──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Python ─────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+MANIFEST
+
+# ── Virtual environments ────────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Testing / type checking ─────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── Jupyter ─────────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ── Data files (raw / cached / processed) ───────────────────────────────────────
+data/raw/
+data/cache/
+data/processed/
+*.parquet
+*.csv
+*.json
+*.h5
+*.hdf5
+*.db
+*.sqlite
+
+# ── ML models & artefacts ────────────────────────────────────────────────────────
+models/
+*.pkl
+*.pickle
+*.joblib
+*.pt
+*.pth
+*.onnx
+*.bin
+
+# ── Reports / generated outputs ──────────────────────────────────────────────────
+reports/
+*.png
+*.pdf
+*.html
+
+# ── Logs ────────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ── IDE / editor ────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ──────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Claude / Copilot tooling ─────────────────────────────────────────────────────
+.claude/
+.claude_cache/
+.claude_cache_*/
