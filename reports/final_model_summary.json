@@ -1,19 +1,19 @@
 {
   "q10": {
-    "best_iter": 310,
+    "best_iter": 440,
     "n_features": 71
   },
   "q50": {
-    "best_iter": 292,
+    "best_iter": 385,
     "n_features": 71
   },
   "q90": {
-    "best_iter": 187,
+    "best_iter": 168,
     "n_features": 71
   },
-  "cv_mae_mean": 21.1088649588635,
-  "cv_mae_std": 1.3625730506983962,
-  "cv_rmse_mean": 27.109748643913285,
+  "cv_mae_mean": 20.336045830296882,
+  "cv_mae_std": 1.2544208167485438,
+  "cv_rmse_mean": 26.507341485406602,
   "n_train_rows": 81688,
   "features_used": [
     "volume_mainland_mwh",
