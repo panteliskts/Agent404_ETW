@@ -1,10 +1,19 @@
 import type {
+  ApiKeyCreateRequest,
+  ApiKeyCreateResponse,
+  ApiKeyListResponse,
+  AuditResponse,
   AuthSessionResponse,
+  DataFeedsResponse,
   FeatureImportanceResponse,
   ForecastResponse,
   LoginRequest,
   LoginResponse,
   LogoutResponse,
+  MfaSetupResponse,
+  MfaStatusResponse,
+  MfaVerifyRequest,
+  MfaVerifyResponse,
   OptimizeRequest,
   OptimizeResponse,
   StatusResponse
@@ -95,9 +104,72 @@ export function login(payload: LoginRequest) {
     method: "POST",
     body: JSON.stringify(payload)
   }).then((response) => {
+    if (!("mfa_required" in response) || !response.mfa_required) {
+      csrfToken = (response as { csrf_token: string }).csrf_token;
+    }
+    return response;
+  });
+}
+
+export function verifyMfa(payload: MfaVerifyRequest) {
+  return requestJson<MfaVerifyResponse>("/auth/mfa/verify", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  }).then((response) => {
     csrfToken = response.csrf_token;
     return response;
   });
+}
+
+export function getMfaStatus() {
+  return requestJson<MfaStatusResponse>("/auth/mfa/status", { cache: "no-store" });
+}
+
+export function startMfaSetup() {
+  return requestJson<MfaSetupResponse>("/auth/mfa/setup", { cache: "no-store" });
+}
+
+export function enableMfa(totp_code: string) {
+  return requestJson<{ ok: boolean; enabled: boolean }>("/auth/mfa/enable", {
+    method: "POST",
+    body: JSON.stringify({ totp_code })
+  });
+}
+
+export function disableMfa() {
+  return requestJson<{ ok: boolean; enabled: boolean }>("/auth/mfa/disable", {
+    method: "POST"
+  });
+}
+
+export function listApiKeys() {
+  return requestJson<ApiKeyListResponse>("/api-keys", { cache: "no-store" });
+}
+
+export function createApiKey(payload: ApiKeyCreateRequest) {
+  return requestJson<ApiKeyCreateResponse>("/api-keys", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function revokeApiKey(id: string) {
+  return requestJson<{ ok: boolean }>(`/api-keys/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export function getAuditLog(params?: { user?: string; action?: string; limit?: number }) {
+  const search = new URLSearchParams();
+  if (params?.user) search.set("user_filter", params.user);
+  if (params?.action) search.set("action_filter", params.action);
+  if (params?.limit) search.set("limit", String(params.limit));
+  const qs = search.toString();
+  return requestJson<AuditResponse>(`/audit${qs ? `?${qs}` : ""}`, { cache: "no-store" });
+}
+
+export function getDataFeeds() {
+  return requestJson<DataFeedsResponse>("/data-feeds", { cache: "no-store" });
 }
 
 export function logout() {

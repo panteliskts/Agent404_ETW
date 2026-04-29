@@ -21,7 +21,7 @@ Application pages:
 
 The frontend lives in `frontend/`, so run `npm` commands there. The frontend also needs the FastAPI backend on port `8000`; starting only `npm run dev` will load the page but leave the app non-functional.
 
-See [docs/RUNNING_APP.md](docs/RUNNING_APP.md) for startup instructions and [docs/ONBOARDING_GUIDE.md](docs/ONBOARDING_GUIDE.md) for the operator onboarding guide.
+See [docs/RUNNING_APP.md](docs/RUNNING_APP.md) for startup instructions, [docs/ONBOARDING_GUIDE.md](docs/ONBOARDING_GUIDE.md) for the operator onboarding guide, and [docs/DOPPLER_GUIDE.md](docs/DOPPLER_GUIDE.md) for running the repo with Doppler-managed secrets.
 
 ## Install Python Requirements Manually
 

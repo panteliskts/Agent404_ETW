@@ -25,6 +25,7 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 class AuthenticatedUser:
     username: str
     csrf_token: str
+    role: str = "admin"
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class SecuritySettings:
     rate_limit_window_seconds: int
     login_rate_limit_requests: int
     login_rate_limit_window_seconds: int
+    auth_role: str = "admin"
 
 
 def _split_csv(value: str) -> list[str]:
@@ -67,6 +69,7 @@ def load_security_settings() -> SecuritySettings:
         rate_limit_window_seconds=int(os.getenv("APP_RATE_LIMIT_WINDOW_SECONDS", "60")),
         login_rate_limit_requests=int(os.getenv("APP_LOGIN_RATE_LIMIT_REQUESTS", "8")),
         login_rate_limit_window_seconds=int(os.getenv("APP_LOGIN_RATE_LIMIT_WINDOW_SECONDS", "60")),
+        auth_role=os.getenv("APP_AUTH_ROLE", "admin"),
     )
 
 
@@ -136,7 +139,7 @@ def _sign(value: str) -> str:
     return _b64encode(signature)
 
 
-def create_session_token(username: str) -> tuple[str, str, int]:
+def create_session_token(username: str, role: str = "admin") -> tuple[str, str, int]:
     now = int(time.time())
     expires_at = now + settings.session_seconds
     csrf_token = secrets.token_urlsafe(32)
@@ -144,6 +147,7 @@ def create_session_token(username: str) -> tuple[str, str, int]:
         "csrf": csrf_token,
         "exp": expires_at,
         "iat": now,
+        "rol": role,
         "sub": username,
     }
     payload_segment = _b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"))
@@ -174,10 +178,12 @@ def decode_session_token(token: str | None) -> dict | None:
     if int(payload.get("exp", 0)) < int(time.time()):
         return None
 
-    username = payload.get("sub")
+    username   = payload.get("sub")
     csrf_token = payload.get("csrf")
     if not isinstance(username, str) or not isinstance(csrf_token, str):
         return None
+    if "rol" not in payload:
+        payload["rol"] = "admin"
     return payload
 
 
@@ -253,7 +259,11 @@ def require_user(request: Request) -> AuthenticatedUser:
         if not csrf_header or not hmac.compare_digest(csrf_header, csrf_token):
             raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
-    return AuthenticatedUser(username=str(payload["sub"]), csrf_token=str(payload["csrf"]))
+    return AuthenticatedUser(
+        username=str(payload["sub"]),
+        csrf_token=str(payload["csrf"]),
+        role=str(payload.get("rol", "admin")),
+    )
 
 
 def set_headers(response: Response, headers: Iterable[tuple[str, str]] | dict[str, str]) -> None:

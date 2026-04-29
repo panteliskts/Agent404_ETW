@@ -6,8 +6,17 @@
 ETW/
 ├── app.py                  # Streamlit dashboard (entry point)
 ├── api/
-│   ├── main.py             # FastAPI service wrapper around existing src/ logic
-│   └── requirements.txt    # API-only deps: fastapi, uvicorn, pydantic
+│   ├── main.py             # FastAPI service + all endpoints
+│   ├── security.py         # HMAC session tokens, CSRF, rate limiter, password hashing
+│   ├── rbac.py             # Role-Based Access Control (viewer / operator / admin)
+│   ├── audit.py            # WORM append-only SQLite audit log
+│   ├── mfa.py              # TOTP / RFC 6238 MFA with QR code provisioning
+│   ├── api_keys.py         # Argon2id-hashed API keys for SCADA integration
+│   ├── encryption.py       # AES-256-GCM encryption for secrets at rest
+│   ├── oauth.py            # OAuth 2.0 / OIDC SSO (Microsoft Entra + Google)
+│   └── requirements.txt    # API-only deps: fastapi, uvicorn, pydantic + security libs
+├── nginx/
+│   └── nginx.conf          # TLS 1.3-only reverse proxy, HSTS, WSS, rate-limit zones
 ├── config.py               # BatterySpec, paths, locations
 ├── requirements.txt        # All dependencies
 ├── frontend/               # Next.js 14 + TypeScript + Tailwind + Recharts app
@@ -175,21 +184,88 @@ ETW/
 
 ---
 
-## Phase 3 — Missing / Next Work
+## Phase 3 — Enterprise Security Layer
 
-| Task | Status | ETA |
-|------|--------|-----|
+### Transport & Network Security
+
+| Task | Status | Notes |
+|------|--------|-------|
+| TLS 1.3 enforcement | ✅ | `nginx/nginx.conf` — `ssl_protocols TLSv1.3` only; HTTP→HTTPS redirect |
+| HSTS (HTTP Strict Transport Security) | ✅ | nginx: `max-age=31536000; includeSubDomains; preload`; Next.js: injected in production builds |
+| WSS (WebSocket Secure) | ✅ | nginx `/ws/` location with `Upgrade` header passthrough and 3600 s keepalive |
+| OCSP stapling | ✅ | `ssl_stapling on` in nginx |
+
+### Authentication & Identity
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Session tokens (HMAC-signed, HTTP-only cookies) | ✅ | `api/security.py` — custom signed tokens with `exp`, `iat`, `sub`, `rol`, `csrf` claims |
+| CSRF double-submit tokens | ✅ | `X-CSRF-Token` header required for all unsafe methods; JS-readable cookie |
+| Password hashing (PBKDF2-SHA256) | ✅ | `password_hash_for_env()` helper; `APP_AUTH_PASSWORD_HASH` env var |
+| TOTP / MFA (RFC 6238) | ✅ | `api/mfa.py` — pyotp; QR code via `qrcode[svg]`; two-phase login with short-lived `mfa_token` |
+| MFA endpoints | ✅ | `GET /auth/mfa/setup`, `POST /auth/mfa/enable`, `POST /auth/mfa/verify` |
+| OAuth 2.0 / OIDC SSO | ✅ | `api/oauth.py` — Microsoft Entra ID + Google Workspace; email domain allow-list |
+| OIDC endpoints | ✅ | `GET /auth/oidc/login?provider=microsoft\|google`, `GET /auth/oidc/callback/{provider}` |
+| RBAC (Role-Based Access Control) | ✅ | `api/rbac.py` — viewer / operator / admin hierarchy; `require_role()` FastAPI dependency |
+| Role encoded in session token | ✅ | `"rol"` claim in token payload; `AuthenticatedUser.role` field |
+| Endpoint role enforcement | ✅ | `/optimize` → operator+; `/api-keys`, `/audit` → admin only |
+
+### API & Integration Security
+
+| Task | Status | Notes |
+|------|--------|-------|
+| API key management (Argon2id hashed) | ✅ | `api/api_keys.py` — plaintext shown once, prefix stored for O(1) lookup, `bk_<prefix>_<secret>` format |
+| API key CRUD endpoints | ✅ | `GET /api-keys`, `POST /api-keys`, `DELETE /api-keys/{id}` — all admin-gated |
+| Rate limiting (in-memory sliding window) | ✅ | General: 240 req/60 s; login: 8 req/60 s — both enforced in FastAPI middleware and nginx zones |
+| CORS strict allow-list | ✅ | `APP_ALLOWED_ORIGINS` env var; `TrustedHostMiddleware` |
+
+### Application-Level Security (OWASP)
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Content Security Policy (CSP) | ✅ | FastAPI: `default-src 'none'`; Next.js: per-environment CSP in `next.config.mjs` |
+| CSRF tokens | ✅ | Double-submit pattern; `POST /optimize` and all state-changing endpoints protected |
+| Input sanitization / validation | ✅ | Pydantic v2 `Field(ge=, le=, pattern=)` on all request models |
+| Security headers | ✅ | `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy` |
+
+### Data at Rest & Auditing
+
+| Task | Status | Notes |
+|------|--------|-------|
+| AES-256-GCM encryption | ✅ | `api/encryption.py` — `cryptography` lib; nonce prepended to ciphertext; key from `APP_ENCRYPTION_KEY` |
+| WORM audit log | ✅ | `api/audit.py` — SQLite with `set_authorizer` blocking UPDATE/DELETE at driver level; schema-first init |
+| Audit log fields | ✅ | `id`, `timestamp`, `user_id`, `action`, `resource`, `ip_address`, `details` (JSON) |
+| Audit log on key events | ✅ | login, login_failed, login_mfa_ok, logout, optimize, mfa_enabled, api_key_created, api_key_revoked |
+| Audit log viewer | ✅ | `GET /audit?user_filter=&action_filter=&since=&limit=` — admin only |
+
+### Security Verification
+
+| Check | Status | Notes |
+| ------ | -------- | ------- |
+| AES-256-GCM round-trip | ✅ | `encrypt(decrypt(x)) == x` verified in smoke test |
+| WORM authorizer blocks UPDATE | ✅ | `DatabaseError` raised on `UPDATE audit_log ...` — confirmed |
+| Role claim in token | ✅ | `decode_session_token()` returns `payload["rol"]` correctly |
+| Argon2id key hash/verify | ✅ | `verify_key(plaintext)` returns correct metadata after `create()` |
+| All new security imports | ✅ | `rbac`, `audit`, `mfa`, `api_keys`, `encryption`, `oauth` all import cleanly |
+| New security deps installed | ✅ | `argon2-cffi`, `cryptography`, `pyotp`, `qrcode`, `httpx` in venv |
+
+---
+
+## Phase 4 — Missing / Next Work
+
+| Task | Status | Notes |
+|------|--------|-------|
 | Browser visual QA | 🔲 | Use Playwright/in-app browser screenshots on desktop + mobile to catch chart overlap and responsive issues |
 | Automated API tests | 🔲 | Add pytest coverage for status/forecast/optimize/feature-importance and model-training fallback |
-| Frontend interaction tests | 🔲 | Add tests for polling, debounce, scenario immediate rerun, error states |
+| Security unit tests | 🔲 | Pytest for RBAC deny cases, WORM integrity, MFA flow, OIDC domain block |
+| Frontend MFA flow UI | 🔲 | Login page needs to handle `{ mfa_required: true, mfa_token }` response and show TOTP input |
+| Frontend API key manager UI | 🔲 | Admin page to create/list/revoke API keys; show plaintext key once in modal |
 | Better API lifecycle | 🔲 | Migrate from deprecated `@app.on_event("startup")` to FastAPI lifespan context |
-| Production config | 🔲 | Add `.env.local.example` for `NEXT_PUBLIC_API_URL`; document prod API URL setup |
-| Docker / deployment | 🔲 | Dockerfiles or compose for API + frontend, health checks, process supervision |
+| Docker / deployment | 🔲 | Dockerfiles or compose for API + frontend + nginx, health checks, process supervision |
+| OIDC state param persistence | 🔲 | `oauth.py` comment notes state should be stored server-side (Redis TTL) to prevent CSRF on callback |
 | Live ENTSO-E path | ⏳ | Needs `ENTSOE_API_KEY`; verify live source and cache writes end to end |
 | Real fuels path | ⏳ | Verify yfinance TTF/EUA fetch when online and fallback behavior when offline |
 | Visual idle-rate tuning | ⏳ | Current smoke-test default returned `idle_count = 0`; demo pitch may need parameters/data window that clearly shows grey idle bars |
-| Security/audit follow-up | ⏳ | Latest Next 14 is installed, but `npm audit` still reports advisories whose automated fix jumps to Next 16 |
-| Auth / tenancy | 🔲 | Not implemented; needed before exposing customer data or multi-user deployments |
 | OpenAPI generated types | 🔲 | Optional: generate TS types from FastAPI schema instead of maintaining duplicate frontend types |
 | Replace PuLP with Pyomo + HiGHS | 🔲 | Later optimizer hardening |
 | Piecewise-linear efficiency curves | 🔲 | Later battery model fidelity |
