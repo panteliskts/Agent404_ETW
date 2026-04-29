@@ -41,7 +41,7 @@ def pinball_loss(y_true, y_pred, alpha):
 
 
 def main():
-    df = pd.read_parquet(PROCESSED_DIR / "features_realistic.parquet")
+    df = pd.read_parquet(PROCESSED_DIR / "features.parquet")
     df = df.dropna(subset=[TARGET]).sort_index()
     end = df.index.max()
     test_start = end - pd.Timedelta(days=TEST_DAYS)

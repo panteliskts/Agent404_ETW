@@ -179,12 +179,53 @@ def build_dataset(start: str = TRAIN_START, realistic_lags_only: bool = False) -
 
 # Audit dropped wind/radiation/temperature averages and thermal_gap (near-zero
 # gain). gas_share_production survived (~0.16% gain) and is kept.
-_EXTRA_COMPOSITES = ("gas_share_production",)
+_EXTRA_COMPOSITES = (
+    "gas_share_production",
+    "res_penetration",
+    "solar_load_ratio",
+    "wind_load_ratio",
+    "collapse_risk",
+    "solar_surplus_midday",
+    "national_solar_radiation",
+)
 
 
 def _add_extra_composites(df: pd.DataFrame) -> pd.DataFrame:
     if {"gen_gas_mw", "production_total_mw"}.issubset(df.columns):
         df["gas_share_production"] = df["gen_gas_mw"] / df["production_total_mw"].replace(0, np.nan)
+
+    # ── Renewable oversupply / price collapse risk features ──────────────────
+    load = df.get("load_forecast_mw")
+    solar = df.get("forecast_solar_mw")
+    wind  = df.get("forecast_wind_onshore_mw")
+
+    if load is not None and solar is not None and wind is not None:
+        safe_load = load.replace(0, np.nan)
+        res_total = solar.fillna(0) + wind.fillna(0)
+
+        # RES as fraction of load — primary collapse signal (>1 means oversupply)
+        df["res_penetration"] = res_total / safe_load
+
+        # Solar and wind separately
+        df["solar_load_ratio"] = solar.fillna(0) / safe_load
+        df["wind_load_ratio"]  = wind.fillna(0)  / safe_load
+
+        # Interaction: high RES penetration × recent price level
+        # Captures "prices were high + renewables ramping → collapse incoming"
+        if PRICE_COL in df.columns:
+            price_lag = df[PRICE_COL].shift(4)  # 1-hour lag
+            df["collapse_risk"] = df["res_penetration"] * price_lag.clip(lower=0)
+
+        # Solar surplus during midday (10-14h) — worst collapse window
+        if "hour" in df.columns:
+            midday = df["hour"].between(10, 14)
+            df["solar_surplus_midday"] = df["solar_load_ratio"].where(midday, 0)
+
+    # National solar radiation — average across all 4 weather stations
+    rad_cols = [c for c in df.columns if c.endswith("_shortwave_radiation")]
+    if len(rad_cols) >= 2:
+        df["national_solar_radiation"] = df[rad_cols].mean(axis=1)
+
     return df
 
 

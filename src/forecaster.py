@@ -13,7 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from config import MODELS_DIR
 
 TARGET = "dam_price_eur_mwh"
-QUANTILE_ALPHAS = [0.10, 0.50, 0.90]
+QUANTILE_ALPHAS = [0.05, 0.50, 0.95]
 
 
 def _drop_target_leakage(features: pd.DataFrame) -> list[str]:

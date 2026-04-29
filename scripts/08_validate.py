@@ -21,7 +21,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from config import DEFAULT_BATTERY, GR_TIMEZONE, PROCESSED_DIR, REPORTS_DIR
+from config import DEFAULT_BATTERY, PROCESSED_DIR, REPORTS_DIR
 from src.forecaster import load_quantile_models, predict_interval
 from src.scheduler import compute_low_confidence_mask, optimize, realized_revenue
 
@@ -35,7 +35,7 @@ def pinball_loss(y_true: np.ndarray, y_pred: np.ndarray, alpha: float) -> float:
 
 
 def main():
-    df = pd.read_parquet(PROCESSED_DIR / "features_realistic.parquet")
+    df = pd.read_parquet(PROCESSED_DIR / "features.parquet")
     end = df.index.max()
     test_start = end - pd.Timedelta(days=TEST_DAYS)
     test_df = df.loc[df.index >= test_start].copy()
