@@ -45,8 +45,13 @@ class BatterySpec:
     soc_max_frac: float = 0.95
     soc_init_frac: float = 0.50
     cyclic: bool = True
+    cyclic_penalty: float = 0.0      # EUR/MWh SoC deviation at end; 0 = hard equality
     max_cycles_per_day: float = 1.5
     degradation_eur_per_mwh: float = 2.0
+    ramp_mw: float | None = None          # max net-power change per MTU in MW; None = no limit
+    min_power_mw: float = 0.0             # minimum MW when dispatching; 0 = no minimum
+    min_discharge_price: float | None = None  # don't discharge below this EUR/MWh; None = no floor
+    max_charge_price: float | None = None     # don't charge above this EUR/MWh; None = no ceiling
 
     @property
     def soc_min(self) -> float:
