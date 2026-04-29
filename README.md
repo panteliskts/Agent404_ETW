@@ -1,1 +1,7 @@
 # ETW
+
+Run this to install req
+
+```sh
+pip install "pandas>=2.1" "numpy>=1.26" "requests>=2.31" "python-dotenv>=1.0" "entsoe-py>=0.6.10" "yfinance>=0.2.40" "pulp>=2.8" "scikit-learn>=1.4" "lightgbm>=4.3" "matplotlib>=3.8" "pyarrow>=15.0" "tqdm>=4.66"
+```
