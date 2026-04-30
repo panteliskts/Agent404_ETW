@@ -1,0 +1,19 @@
+{
+  "total_days": 30,
+  "mean_capture_ratio": 0.8748,
+  "median_capture_ratio": 0.8882,
+  "overall_capture_ratio": 0.8734,
+  "total_realized_eur": 551237.22,
+  "mean_eur_per_day": 18374.57,
+  "horizon_counts": {
+    "2": 28,
+    "3": 2
+  },
+  "config": {
+    "horizon_min": 2,
+    "horizon_mid": 3,
+    "horizon_max": 4,
+    "future_base_discount": 0.1,
+    "future_decay": 0.6
+  }
+}

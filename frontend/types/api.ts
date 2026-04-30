@@ -134,7 +134,74 @@ export type Kpis = {
   cycles_used: number;
   idle_count: number;
   total_mtus: number;
+  horizon_counts?: Record<string, number>;
+  energy_traded_mwh?: number;
+  daily_profit_eur?: number;
+  annualized_revenue_eur?: number;
+  naive_baseline_eur?: number;
+  naive_daily_eur?: number;
+  uplift_eur_day?: number;
+  annualized_uplift_eur?: number;
+  capture_vs_naive?: number | null;
+  model_capture_ratio?: number;
 };
+
+export type Webhook = {
+  id: string;
+  label: string;
+  url: string;
+  events: string[];
+  created_at: number;
+  last_delivered_at: number | null;
+  last_status: number | null;
+  last_error: string | null;
+  disabled: boolean;
+};
+
+export type WebhookListResponse = {
+  webhooks: Webhook[];
+  known_events: string[];
+};
+
+export type WebhookCreateRequest = {
+  url: string;
+  events: string[];
+  label?: string;
+};
+
+export type WebhookCreateResponse = {
+  secret: string;
+  metadata: Webhook;
+};
+
+export type BillingTier = {
+  name: "free" | "pro" | "enterprise";
+  label: string;
+  rate_limit: number;
+  monthly_call_quota: number;
+  can_use_optimize: boolean;
+  can_use_webhooks: boolean;
+  price_eur_month: number;
+};
+
+export type BillingTiersResponse = { tiers: BillingTier[] };
+
+export type BillingKey = {
+  key_id: string;
+  prefix: string;
+  label: string;
+  role: string;
+  tier: BillingTier["name"];
+  tier_label: string;
+  rate_limit: number;
+  monthly_call_quota: number;
+  monthly_calls: number;
+  period: string;
+  can_use_webhooks: boolean;
+  price_eur_month: number;
+};
+
+export type BillingKeysResponse = { keys: BillingKey[] };
 
 export type ScheduleRow = {
   time: string;

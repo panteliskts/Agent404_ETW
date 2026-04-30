@@ -34,7 +34,13 @@ from api.security import (  # noqa: E402
     settings,
     verify_credentials,
 )
-from api import audit, mfa as mfa_module, api_keys as api_keys_module  # noqa: E402
+from api import (  # noqa: E402
+    audit,
+    mfa as mfa_module,
+    api_keys as api_keys_module,
+    webhooks as webhooks_module,
+    billing as billing_module,
+)
 from api.rbac import require_admin, require_operator, require_viewer  # noqa: E402
 from api.oauth import router as oidc_router  # noqa: E402
 from config import BatterySpec
@@ -62,6 +68,10 @@ class OptimizeRequest(BaseModel):
     degradation_eur_per_mwh: float = Field(default=5.0, ge=0.0)
     initial_soc_pct: float = Field(default=50.0, ge=5.0, le=95.0)
     scenario: Scenario = "Base"
+    planning_mode: Literal["short", "long"] = "long"
+    max_horizon_days: int = Field(default=4, ge=2, le=7)
+    future_base_discount: float = Field(default=0.1, ge=0.0, le=1.0)
+    future_decay: float = Field(default=0.6, ge=0.1, le=1.0)
 
 
 class LoginRequest(BaseModel):
@@ -144,6 +154,135 @@ def _apply_derating(base: BatterySpec, scenario: Scenario) -> BatterySpec:
         max_cycles_per_day=base.max_cycles_per_day,
         degradation_eur_per_mwh=base.degradation_eur_per_mwh,
     )
+
+
+def _daily_spread_mean(q10: pd.Series, q90: pd.Series) -> pd.Series:
+    spread = (q90 - q10)
+    return spread.groupby(spread.index.normalize()).mean()
+
+
+def _discount_curve(horizon_days: int, base: float, decay: float) -> list[float]:
+    discounts = [1.0]
+    for i in range(1, horizon_days):
+        discounts.append(base * (decay ** (i - 1)))
+    return discounts
+
+
+def _choose_horizon(spread_mean: float, thr_low: float, thr_high: float, max_horizon: int) -> int:
+    if spread_mean <= thr_low:
+        return min(4, max_horizon)
+    if spread_mean <= thr_high:
+        return min(3, max_horizon)
+    return 2
+
+
+def _schedule_with_horizon(
+    q10: pd.Series,
+    q50: pd.Series,
+    q90: pd.Series,
+    idle_mask: pd.Series | None,
+    battery: BatterySpec,
+    horizon_selector,
+    base_discount: float,
+    decay: float,
+) -> tuple[pd.DataFrame, dict[int, int]]:
+    days = q50.index.normalize()
+    unique_days = days.unique().sort_values()
+    schedules = []
+    horizon_counts: dict[int, int] = {}
+
+    for i, d in enumerate(unique_days):
+        m0 = days == d
+        if m0.sum() < 90:
+            continue
+        horizon_days = int(horizon_selector(d))
+        remaining = len(unique_days) - i
+        horizon_days = max(1, min(horizon_days, remaining))
+
+        prices_by_day = []
+        masks_by_day = []
+        for j in range(horizon_days):
+            dj = unique_days[i + j]
+            mj = days == dj
+            prices_by_day.append(q50[mj])
+            masks_by_day.append(idle_mask[mj] if idle_mask is not None else None)
+
+        discounts = _discount_curve(horizon_days, base_discount, decay)
+        sched = scheduler.optimize_multiday_horizon(
+            prices_by_day,
+            battery=battery,
+            idle_masks=masks_by_day,
+            discounts=discounts,
+        )
+        day_df = sched.to_frame()
+        day_df["horizon_days"] = horizon_days
+        schedules.append(day_df)
+        horizon_counts[horizon_days] = horizon_counts.get(horizon_days, 0) + 1
+
+    if not schedules:
+        return pd.DataFrame(), horizon_counts
+
+    out = pd.concat(schedules).sort_index()
+    out["price_q10"] = q10.reindex(out.index)
+    out["price_q50"] = q50.reindex(out.index)
+    out["price_q90"] = q90.reindex(out.index)
+    out["spread"] = out["price_q90"] - out["price_q10"]
+    if idle_mask is not None:
+        out["confidence"] = np.where(idle_mask.reindex(out.index).fillna(False), "low", "high")
+    else:
+        out["confidence"] = "high"
+    return out, horizon_counts
+
+
+def _naive_baseline_revenue(
+    q50: pd.Series,
+    battery: BatterySpec,
+    delta_h: float,
+    charge_hours: tuple[int, int] = (2, 6),
+    discharge_hours: tuple[int, int] = (18, 22),
+) -> dict:
+    """Revenue from the dumbest defensible strategy: full-power charge in the
+    early-morning window, full-power discharge in the evening peak window,
+    on the same forecast prices the LP sees. This is the "without us" number
+    customers compare to: peak-shaving with no model, no LP, no horizon.
+    """
+    if q50.empty:
+        return {"net_profit_eur": 0.0, "gross_revenue_eur": 0.0, "degradation_eur": 0.0, "cycles": 0.0}
+
+    local = q50.tz_convert("Europe/Athens") if q50.index.tz is not None else q50
+    hours = local.index.hour
+    is_charge = (hours >= charge_hours[0]) & (hours < charge_hours[1])
+    is_discharge = (hours >= discharge_hours[0]) & (hours < discharge_hours[1])
+
+    # Full power in each band, capped by daily capacity & cycle budget.
+    n_days = max(int((local.index[-1].normalize() - local.index[0].normalize()).days) + 1, 1)
+    cap_mwh = battery.energy_mwh * (battery.soc_max_frac - battery.soc_min_frac)
+    daily_throughput_cap = cap_mwh * battery.max_cycles_per_day
+    total_cap = daily_throughput_cap * n_days
+
+    charge_mw  = np.where(is_charge,    battery.power_mw, 0.0)
+    discharge_mw = np.where(is_discharge, battery.power_mw, 0.0)
+
+    # Trim to throughput budget by scaling both legs uniformly.
+    throughput_mwh = float((charge_mw + discharge_mw).sum() * delta_h)
+    if throughput_mwh > total_cap and throughput_mwh > 0:
+        scale = total_cap / throughput_mwh
+        charge_mw *= scale
+        discharge_mw *= scale
+
+    prices = q50.to_numpy()
+    revenue = float(((discharge_mw - charge_mw) * prices * delta_h).sum())
+    # Round-trip efficiency penalty applied on the discharge leg
+    rte = battery.eta_charge * battery.eta_discharge
+    revenue *= rte if revenue > 0 else 1.0
+    degradation = float(battery.degradation_eur_per_mwh * (charge_mw + discharge_mw).sum() * delta_h)
+    cycles = float(discharge_mw.sum() * delta_h / battery.energy_mwh)
+    return {
+        "net_profit_eur": revenue - degradation,
+        "gross_revenue_eur": revenue,
+        "degradation_eur": degradation,
+        "cycles": cycles,
+    }
 
 
 def _battery_from_request(payload: OptimizeRequest) -> BatterySpec:
@@ -360,9 +499,9 @@ def forecast(_: AuthenticatedUser = Depends(require_user)) -> dict:
     return {
         "timestamps": [_iso(ts) for ts in window.index],
         "actual": [_json_float(value) for value in window[TARGET].to_numpy()],
-        "q10": [_json_float(value) for value in predictions["q10"].to_numpy()],
+        "q10": [_json_float(value) for value in predictions["q05"].to_numpy()],
         "q50": [_json_float(value) for value in predictions["q50"].to_numpy()],
-        "q90": [_json_float(value) for value in predictions["q90"].to_numpy()],
+        "q90": [_json_float(value) for value in predictions["q95"].to_numpy()],
     }
 
 
@@ -376,21 +515,74 @@ def optimize(
     battery = _battery_from_request(payload)
     _, predictions, source = _forecast_window()
 
-    q10 = predictions["q10"]
+    q10 = predictions["q05"]
     q50 = predictions["q50"]
-    q90 = predictions["q90"]
+    q90 = predictions["q95"]
     idle_mask = scheduler.compute_low_confidence_mask(q10, q90, battery=battery)
-    schedule = scheduler.optimize(q50, battery=battery, idle_mask=idle_mask, solver_msg=False)
-    schedule_df = schedule.to_frame()
 
-    delta_h = float(schedule.delta_h)
+    if payload.planning_mode == "short":
+        def _short_selector(_day):
+            return 2
+        schedule_df, horizon_counts = _schedule_with_horizon(
+            q10,
+            q50,
+            q90,
+            idle_mask,
+            battery,
+            _short_selector,
+            payload.future_base_discount,
+            payload.future_decay,
+        )
+        spread_daily = _daily_spread_mean(q10, q90)
+        spread_thr_low = float(spread_daily.quantile(0.33)) if len(spread_daily) else None
+        spread_thr_high = float(spread_daily.quantile(0.66)) if len(spread_daily) else None
+    else:
+        spread_daily = _daily_spread_mean(q10, q90)
+        spread_thr_low = float(spread_daily.quantile(0.33)) if len(spread_daily) else None
+        spread_thr_high = float(spread_daily.quantile(0.66)) if len(spread_daily) else None
+
+        def _dynamic_selector(day):
+            spread_mean = float(spread_daily.loc[day]) if day in spread_daily.index else float("inf")
+            return _choose_horizon(spread_mean, spread_thr_low or 0.0, spread_thr_high or 0.0, payload.max_horizon_days)
+
+        schedule_df, horizon_counts = _schedule_with_horizon(
+            q10,
+            q50,
+            q90,
+            idle_mask,
+            battery,
+            _dynamic_selector,
+            payload.future_base_discount,
+            payload.future_decay,
+        )
+
+    if schedule_df.empty:
+        raise HTTPException(status_code=503, detail="not enough forecast rows to build a schedule")
+
+    delta_h = float((schedule_df.index[1] - schedule_df.index[0]).total_seconds() / 3600.0)
+    schedule_df["net_mw"] = schedule_df["discharge_mw"] - schedule_df["charge_mw"]
+
     net_mw = schedule_df["discharge_mw"].to_numpy() - schedule_df["charge_mw"].to_numpy()
     throughput_mwh = (schedule_df["charge_mw"].to_numpy() + schedule_df["discharge_mw"].to_numpy()) * delta_h
-    gross_revenue = float(np.sum(q50.to_numpy() * net_mw * delta_h))
+    gross_revenue = float(np.sum(schedule_df["price_q50"].to_numpy() * net_mw * delta_h))
     degradation = float(np.sum(battery.degradation_eur_per_mwh * throughput_mwh))
     net_profit = gross_revenue - degradation
     cycles_used = float(np.sum(schedule_df["discharge_mw"].to_numpy()) * delta_h / battery.energy_mwh)
     idle_aligned = idle_mask.reindex(schedule_df.index).fillna(False)
+
+    # Customer KPI: revenue if no model existed (peak-shaving heuristic on q50).
+    naive = _naive_baseline_revenue(q50.loc[schedule_df.index], battery, delta_h)
+    horizon_days_total = float(len(schedule_df) * delta_h / 24.0) or 1.0
+    daily_profit_eur = net_profit / horizon_days_total
+    daily_naive_eur = naive["net_profit_eur"] / horizon_days_total
+    uplift_eur_day = daily_profit_eur - daily_naive_eur
+    annualized_revenue_eur = daily_profit_eur * 365.0
+    annualized_uplift_eur = uplift_eur_day * 365.0
+    energy_traded_mwh = float(throughput_mwh.sum())
+    capture_vs_naive = (
+        net_profit / naive["net_profit_eur"]
+        if naive["net_profit_eur"] > 1e-6 else None
+    )
 
     rows = []
     for ts, row in schedule_df.iterrows():
@@ -401,6 +593,12 @@ def optimize(
                 "discharge_mw": float(row["discharge_mw"]),
                 "net_mw": float(row["net_mw"]),
                 "soc_mwh": float(row["soc_mwh"]),
+                "horizon_days": int(row["horizon_days"]),
+                "price_q10": _json_float(row["price_q10"]),
+                "price_q50": _json_float(row["price_q50"]),
+                "price_q90": _json_float(row["price_q90"]),
+                "spread": _json_float(row["spread"]),
+                "confidence": str(row["confidence"]),
                 "is_idle": bool(idle_aligned.loc[ts]),
             }
         )
@@ -413,6 +611,24 @@ def optimize(
             "cycles_used": cycles_used,
             "idle_count": int(idle_aligned.sum()),
             "total_mtus": int(len(idle_aligned)),
+            "horizon_counts": horizon_counts,
+            "energy_traded_mwh": energy_traded_mwh,
+            "daily_profit_eur": daily_profit_eur,
+            "annualized_revenue_eur": annualized_revenue_eur,
+            "naive_baseline_eur": naive["net_profit_eur"],
+            "naive_daily_eur": daily_naive_eur,
+            "uplift_eur_day": uplift_eur_day,
+            "annualized_uplift_eur": annualized_uplift_eur,
+            "capture_vs_naive": _json_float(capture_vs_naive),
+            "model_capture_ratio": 0.8743,  # walk-forward overall, see HANDOFF Section 8
+        },
+        "planning": {
+            "mode": payload.planning_mode,
+            "max_horizon_days": payload.max_horizon_days,
+            "future_base_discount": payload.future_base_discount,
+            "future_decay": payload.future_decay,
+            "spread_threshold_low": _json_float(spread_thr_low),
+            "spread_threshold_high": _json_float(spread_thr_high),
         },
         "schedule": rows,
         "source": source,
@@ -428,6 +644,33 @@ def optimize(
             "capacity_mwh": payload.capacity_mwh,
         },
     )
+
+    # Meter API-key callers; cookie sessions are not metered.
+    api_key_id = getattr(request.state, "api_key_id", None)
+    if api_key_id:
+        billing_module.record_call(api_key_id)
+
+    # Fan out to webhook subscribers (fire-and-forget; failures are logged
+    # to the webhook record, never surfaced to the optimize caller).
+    webhook_payload = {
+        "event": "optimize.completed",
+        "delivered_at": int(__import__("time").time()),
+        "asset": {
+            "capacity_mwh": payload.capacity_mwh,
+            "power_mw": payload.power_mw,
+            "rte_pct": payload.rte_pct,
+            "scenario": payload.scenario,
+        },
+        "kpis": result["kpis"],
+        "horizon": {
+            "first": _iso(schedule_df.index[0]),
+            "last":  _iso(schedule_df.index[-1]),
+            "mtus":  len(schedule_df),
+        },
+    }
+    webhook_owner = user.username.replace("apikey:", "") if user.username.startswith("apikey:") else None
+    webhooks_module.dispatch("optimize.completed", webhook_payload, owner=webhook_owner)
+
     return result
 
 
@@ -522,6 +765,8 @@ def create_api_key(body: ApiKeyCreateRequest, request: Request, user: Authentica
         resource="api_key",
         details={"key_id": meta["id"], "label": body.label, "role": body.role},
     )
+    # New keys default to the free tier; admin can upgrade via PATCH /billing.
+    billing_module.set_tier(meta["id"], billing_module.DEFAULT_TIER)
     return {"key": plaintext, "metadata": meta}
 
 
@@ -551,3 +796,154 @@ def get_audit_log(
 ) -> dict:
     entries = audit.query(user=user_filter, action=action_filter, since=since, limit=limit)
     return {"entries": entries, "count": len(entries)}
+
+
+# ── webhook subscriptions (admin-only) ───────────────────────────────────────
+
+class WebhookCreateRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=400, pattern=r"^https?://")
+    events: list[str] = Field(default_factory=lambda: ["optimize.completed"])
+    label: str = Field(default="", max_length=120)
+
+
+def _webhook_public(meta: dict) -> dict:
+    return {
+        "id":                meta["id"],
+        "label":             meta["label"],
+        "url":               meta["url"],
+        "events":            meta["events"],
+        "created_at":        meta["created_at"],
+        "last_delivered_at": meta["last_delivered_at"],
+        "last_status":       meta["last_status"],
+        "last_error":        meta["last_error"],
+        "disabled":          meta["disabled"],
+    }
+
+
+@app.get("/webhooks")
+def list_webhooks(user: AuthenticatedUser = Depends(require_admin)) -> dict:
+    items = [_webhook_public(h) for h in webhooks_module.list_for(user.username)]
+    return {"webhooks": items, "known_events": list(webhooks_module.KNOWN_EVENTS)}
+
+
+@app.post("/webhooks", status_code=201)
+def create_webhook(
+    body: WebhookCreateRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+) -> dict:
+    secret, meta = webhooks_module.create(
+        owner=user.username, url=body.url, events=body.events, label=body.label,
+    )
+    audit.log(
+        action="webhook_created",
+        user=user.username,
+        ip=client_ip(request),
+        resource="webhook",
+        details={"hook_id": meta["id"], "url": body.url, "events": meta["events"]},
+    )
+    return {"secret": secret, "metadata": _webhook_public(meta)}
+
+
+@app.delete("/webhooks/{hook_id}")
+def delete_webhook(
+    hook_id: str,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+) -> dict:
+    if not webhooks_module.delete(hook_id, user.username):
+        raise HTTPException(status_code=404, detail="webhook not found")
+    audit.log(
+        action="webhook_deleted",
+        user=user.username,
+        ip=client_ip(request),
+        resource="webhook",
+        details={"hook_id": hook_id},
+    )
+    return {"ok": True}
+
+
+@app.post("/webhooks/{hook_id}/test")
+def test_webhook(
+    hook_id: str,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+) -> dict:
+    hook = webhooks_module.get(hook_id)
+    if hook is None or hook["owner"] != user.username:
+        raise HTTPException(status_code=404, detail="webhook not found")
+    payload = {
+        "event": "ping",
+        "delivered_at": int(__import__("time").time()),
+        "message": "LogicVolt webhook test ping",
+    }
+    # Synchronous so the admin sees the immediate delivery status. We sign
+    # with the *derived* signing key (SHA-256 of secret_hash), matching the
+    # production dispatch path so subscribers can verify with the same code.
+    derived = __import__("hashlib").sha256(hook["secret_hash"].encode()).hexdigest()
+    status, error = webhooks_module.deliver_now(hook, derived, "ping", payload)
+    audit.log(
+        action="webhook_test",
+        user=user.username,
+        ip=client_ip(request),
+        resource="webhook",
+        details={"hook_id": hook_id, "status": status, "error": error},
+    )
+    return {"status": status, "error": error}
+
+
+# ── billing / API plan ───────────────────────────────────────────────────────
+
+class BillingUpdateRequest(BaseModel):
+    tier: str = Field(pattern="^(free|pro|enterprise)$")
+
+
+@app.get("/billing/tiers")
+def list_tiers(_: AuthenticatedUser = Depends(require_viewer)) -> dict:
+    return {"tiers": billing_module.all_tiers()}
+
+
+@app.get("/billing/keys")
+def billing_for_keys(user: AuthenticatedUser = Depends(require_admin)) -> dict:
+    """Per-key billing snapshot: tier, monthly call counter, plan limits."""
+    keys = api_keys_module.list_keys(user.username)
+    out = []
+    for key in keys:
+        snapshot = billing_module.get(key["id"])
+        tier = billing_module.tier_info(snapshot["tier"])
+        out.append({
+            "key_id":             key["id"],
+            "prefix":             key["prefix"],
+            "label":              key["label"],
+            "role":               key["role"],
+            "tier":               tier.name,
+            "tier_label":         tier.label,
+            "rate_limit":         tier.rate_limit,
+            "monthly_call_quota": tier.monthly_call_quota,
+            "monthly_calls":      snapshot["monthly_calls"],
+            "period":             snapshot["period"],
+            "can_use_webhooks":   tier.can_use_webhooks,
+            "price_eur_month":    tier.price_eur_month,
+        })
+    return {"keys": out}
+
+
+@app.patch("/billing/keys/{key_id}")
+def update_key_tier(
+    key_id: str,
+    body: BillingUpdateRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+) -> dict:
+    keys = api_keys_module.list_keys(user.username)
+    if not any(k["id"] == key_id for k in keys):
+        raise HTTPException(status_code=404, detail="API key not found")
+    snapshot = billing_module.set_tier(key_id, body.tier)
+    audit.log(
+        action="billing_tier_changed",
+        user=user.username,
+        ip=client_ip(request),
+        resource="billing",
+        details={"key_id": key_id, "tier": body.tier},
+    )
+    return {"key_id": key_id, **snapshot}

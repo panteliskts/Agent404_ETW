@@ -71,6 +71,16 @@ Thumbs.db
 .cursorrules
 
 # ── Project Specific Data ─────────────────────────────────────────────────────
-# Using a wildcard ensures you don't accidentally check in other raw files later
-/data/raw/*
-!/data/raw/.gitkeep
+# Bundled production datasets stay in-repo; everything else is regenerated.
+# Runtime SQLite stores and cache files MUST NOT be committed.
+/data/audit.db
+/data/mfa.db
+/data/api_keys.db
+/data/webhooks.db
+/data/billing.json
+/data/cache/*
+/data/demo/*
+!/data/cache/.gitkeep
+!/data/demo/.gitkeep
+.logs/
+*.log

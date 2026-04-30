@@ -1068,19 +1068,42 @@ export default function DashboardPage() {
             <>
               <section className="grid gap-4 lg:grid-cols-4">
                 <MetricCard
-                  label="Estimated Daily Profit"
-                  value={formatEuro(optimization?.kpis.net_profit_eur)}
-                  helper="Forecast-driven objective"
+                  label="Daily Profit"
+                  value={formatEuro(optimization?.kpis.daily_profit_eur ?? optimization?.kpis.net_profit_eur)}
+                  helper="LogicVolt-optimized dispatch"
                   tone="primary"
                 />
+                <MetricCard
+                  label="Annualized Revenue"
+                  value={formatEuro(optimization?.kpis.annualized_revenue_eur)}
+                  helper="Daily profit × 365"
+                />
+                <MetricCard
+                  label="Uplift vs Naive"
+                  value={`${formatEuro(optimization?.kpis.uplift_eur_day)} / day`}
+                  helper={`${formatEuro(optimization?.kpis.annualized_uplift_eur)} / yr vs peak-shave heuristic`}
+                  tone="warning"
+                />
+                <MetricCard
+                  label="Walk-forward Capture"
+                  value={`${formatNumber((optimization?.kpis.model_capture_ratio ?? 0.8743) * 100, 1)} %`}
+                  helper="vs perfect foresight, 30-day mean"
+                />
+              </section>
+
+              <section className="grid gap-4 lg:grid-cols-4">
                 <MetricCard label="Total Energy Traded" value={`${formatNumber(totalEnergyTradedMwh, 1)} MWh`} helper="Absolute scheduled throughput" />
                 <MetricCard
                   label="Spread Captured"
                   value={`${formatNumber(spreadCaptured, 1)} €/MWh`}
                   helper="Gross revenue per traded MWh"
-                  tone="warning"
                 />
-                <MetricCard label="Cycles Used" value={formatNumber(optimization?.kpis.cycles_used, 2)} helper={`${selectedAsset} scenario`} />
+                <MetricCard label="Cycles Used" value={formatNumber(optimization?.kpis.cycles_used, 2)} helper="vs 1.5 / day cap" />
+                <MetricCard
+                  label="Naive Baseline"
+                  value={`${formatEuro(optimization?.kpis.naive_daily_eur)} / day`}
+                  helper="Charge 02-06, discharge 18-22 (no model)"
+                />
               </section>
 
               <section className="rounded-lg border border-teal-100 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-950">

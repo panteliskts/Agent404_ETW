@@ -4,6 +4,8 @@ import type {
   ApiKeyListResponse,
   AuditResponse,
   AuthSessionResponse,
+  BillingKeysResponse,
+  BillingTiersResponse,
   DataFeedsResponse,
   FeatureImportanceResponse,
   ForecastResponse,
@@ -16,7 +18,10 @@ import type {
   MfaVerifyResponse,
   OptimizeRequest,
   OptimizeResponse,
-  StatusResponse
+  StatusResponse,
+  WebhookCreateRequest,
+  WebhookCreateResponse,
+  WebhookListResponse
 } from "@/types/api";
 import { GENERIC_ERROR_MESSAGE } from "@/lib/errors";
 
@@ -200,4 +205,43 @@ export function postOptimize(payload: OptimizeRequest) {
 
 export function getFeatureImportance() {
   return requestJson<FeatureImportanceResponse>("/feature-importance", { cache: "no-store" });
+}
+
+export function listWebhooks() {
+  return requestJson<WebhookListResponse>("/webhooks", { cache: "no-store" });
+}
+
+export function createWebhook(payload: WebhookCreateRequest) {
+  return requestJson<WebhookCreateResponse>("/webhooks", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteWebhook(id: string) {
+  return requestJson<{ ok: boolean }>(`/webhooks/${encodeURIComponent(id)}`, {
+    method: "DELETE"
+  });
+}
+
+export function testWebhook(id: string) {
+  return requestJson<{ status: number; error: string | null }>(
+    `/webhooks/${encodeURIComponent(id)}/test`,
+    { method: "POST" }
+  );
+}
+
+export function listBillingTiers() {
+  return requestJson<BillingTiersResponse>("/billing/tiers", { cache: "no-store" });
+}
+
+export function listBillingKeys() {
+  return requestJson<BillingKeysResponse>("/billing/keys", { cache: "no-store" });
+}
+
+export function setKeyTier(keyId: string, tier: "free" | "pro" | "enterprise") {
+  return requestJson<{ key_id: string; tier: string; monthly_calls: number; period: string }>(
+    `/billing/keys/${encodeURIComponent(keyId)}`,
+    { method: "PATCH", body: JSON.stringify({ tier }) }
+  );
 }

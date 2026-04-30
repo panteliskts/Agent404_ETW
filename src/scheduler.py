@@ -259,6 +259,61 @@ def optimize_multiday(
     )
 
 
+def optimize_multiday_horizon(
+    prices_by_day: list[pd.Series],
+    battery: BatterySpec = DEFAULT_BATTERY,
+    idle_masks: list[pd.Series | None] | None = None,
+    discounts: list[float] | None = None,
+    solver_msg: bool = False,
+) -> Schedule:
+    """N-day rolling-horizon LP. Returns only D0 schedule.
+
+    prices_by_day: list of per-day price series (D0, D1, ... DN).
+    discounts: optional list of per-day discounts (same length as prices_by_day).
+    """
+    if not prices_by_day:
+        raise ValueError("prices_by_day must contain at least one day")
+    n_days = len(prices_by_day)
+    if discounts is None:
+        discounts = [1.0] * n_days
+    if len(discounts) != n_days:
+        raise ValueError("discounts must match prices_by_day length")
+    if idle_masks is None:
+        idle_masks = [None] * n_days
+    if len(idle_masks) != n_days:
+        raise ValueError("idle_masks must match prices_by_day length")
+
+    discounted = [p * float(d) for p, d in zip(prices_by_day, discounts)]
+    prices_all = pd.concat(discounted)
+
+    idle_all = None
+    if any(m is not None for m in idle_masks):
+        masks = [m if m is not None else pd.Series(False, index=p.index)
+                 for m, p in zip(idle_masks, prices_by_day)]
+        idle_all = pd.concat(masks)
+
+    full = optimize(prices_all, battery=battery, idle_mask=idle_all, solver_msg=solver_msg)
+
+    n0 = len(prices_by_day[0])
+    dh = full.delta_h
+    p0 = prices_by_day[0].values.astype(float)
+    ch0 = full.charge_mw[:n0]
+    dis0 = full.discharge_mw[:n0]
+    rev = float(np.sum(p0 * (dis0 - ch0) * dh))
+    deg = float(np.sum(battery.degradation_eur_per_mwh * (ch0 + dis0) * dh))
+
+    return Schedule(
+        timestamps=prices_by_day[0].index,
+        charge_mw=ch0,
+        discharge_mw=dis0,
+        soc_mwh=full.soc_mwh[:n0],
+        revenue_eur=rev,
+        degradation_eur=deg,
+        objective_eur=rev - deg,
+        delta_h=dh,
+    )
+
+
 def realized_revenue(
     schedule: Schedule,
     realized_prices: pd.Series,

@@ -81,6 +81,7 @@ def daily_backtest_mpc(pred_full, realized, idle_mask=None, battery=None):
                     battery=battery,
                     idle_mask_d0=im0,
                     idle_mask_d1=im1,
+                    d1_discount=0.1,
                 )
                 used_mpc = True
             else:

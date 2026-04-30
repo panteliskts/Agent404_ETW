@@ -75,10 +75,16 @@
   ],
   "metrics": {
     "alpha": 0.5,
+    "seed": 42,
     "best_iter": 482,
     "n_train": 80343,
     "n_valid": 1345,
-    "trained_through": "2026-04-30 23:45:00+03:00",
-    "note": "fallback single \u2014 load_quantile_models prefers lgbm_q50_seed*.txt ensemble"
+    "ensemble_member": true,
+    "ensemble_seeds": [
+      42,
+      7,
+      1337
+    ],
+    "trained_through": "2026-04-30 23:45:00+03:00"
   }
 }

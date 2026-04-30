@@ -248,7 +248,38 @@ def verify_credentials(username: str, password: str) -> bool:
     return hmac.compare_digest(password, settings.password)
 
 
+def _bearer_token(request: Request) -> str | None:
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("bearer "):
+        return None
+    token = header.split(" ", 1)[1].strip()
+    return token or None
+
+
+def _authenticate_api_key(request: Request) -> AuthenticatedUser | None:
+    token = _bearer_token(request)
+    if not token or not token.startswith("bk_"):
+        return None
+    # Lazy import keeps the api_keys module out of the import graph for
+    # callers (and tests) that never present a bearer token.
+    from api import api_keys as _keys
+    meta = _keys.verify_key(token)
+    if meta is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    request.state.api_key_id = meta["id"]  # surfaced for billing/audit
+    request.state.api_key_label = meta.get("label", "")
+    return AuthenticatedUser(
+        username=f"apikey:{meta['owner']}",
+        csrf_token="",                   # API-key callers do not need CSRF
+        role=str(meta.get("role", "viewer")),
+    )
+
+
 def require_user(request: Request) -> AuthenticatedUser:
+    api_user = _authenticate_api_key(request)
+    if api_user is not None:
+        return api_user
+
     payload = decode_session_token(request.cookies.get(SESSION_COOKIE))
     if payload is None:
         raise HTTPException(status_code=401, detail="Authentication required")

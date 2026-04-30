@@ -1,0 +1,49 @@
+{
+  "summary": [
+    {
+      "horizon_days": 2,
+      "mean_capture": 0.8748,
+      "overall_capture": 0.8734,
+      "total_realized_eur": 551237.22,
+      "mean_eur_per_day": 18374.57
+    },
+    {
+      "horizon_days": 3,
+      "mean_capture": 0.8734,
+      "overall_capture": 0.8716,
+      "total_realized_eur": 550120.69,
+      "mean_eur_per_day": 18337.36
+    },
+    {
+      "horizon_days": 4,
+      "mean_capture": 0.8723,
+      "overall_capture": 0.8705,
+      "total_realized_eur": 549373.84,
+      "mean_eur_per_day": 18312.46
+    },
+    {
+      "horizon_days": 5,
+      "mean_capture": 0.8723,
+      "overall_capture": 0.8705,
+      "total_realized_eur": 549373.84,
+      "mean_eur_per_day": 18312.46
+    },
+    {
+      "horizon_days": 6,
+      "mean_capture": 0.8721,
+      "overall_capture": 0.8703,
+      "total_realized_eur": 549274.92,
+      "mean_eur_per_day": 18309.16
+    },
+    {
+      "horizon_days": 7,
+      "mean_capture": 0.871,
+      "overall_capture": 0.8693,
+      "total_realized_eur": 548655.82,
+      "mean_eur_per_day": 18288.53
+    }
+  ],
+  "best_horizon_overall_capture": 2,
+  "best_horizon_total_eur": 2,
+  "future_discount": 0.1
+}

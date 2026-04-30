@@ -315,11 +315,58 @@ def predict_interval(
     return pd.DataFrame(out)
 
 
+class EnsembleBooster:
+    """Mean-prediction wrapper over multiple lgb.Boosters sharing feature_cols.
+
+    Mimics the small surface of lgb.Booster used by predict_interval:
+      .predict(X, num_iteration=...) -> np.ndarray
+      .best_iteration                -> int (max across members; predict ignores it per-booster)
+      .feature_importance(importance_type=...) -> np.ndarray (mean across members)
+    """
+
+    def __init__(self, boosters: list[lgb.Booster]):
+        if not boosters:
+            raise ValueError("EnsembleBooster needs at least one booster")
+        self._boosters = boosters
+
+    @property
+    def best_iteration(self) -> int:
+        return max(int(b.best_iteration) for b in self._boosters)
+
+    def predict(self, X, num_iteration=None):
+        preds = []
+        for b in self._boosters:
+            preds.append(b.predict(X, num_iteration=int(b.best_iteration)))
+        return np.mean(np.stack(preds, axis=0), axis=0)
+
+    def feature_importance(self, importance_type: str = "gain"):
+        imps = [b.feature_importance(importance_type=importance_type) for b in self._boosters]
+        return np.mean(np.stack(imps, axis=0), axis=0)
+
+
 def load_quantile_models() -> dict[str, TrainResult] | None:
-    """Load pre-trained quantile models from disk. Returns None if any are missing."""
+    """Load pre-trained quantile models from disk. Returns None if any are missing.
+
+    For q50, prefers the ensemble (lgbm_q50_seedN.txt files) when present,
+    falling back to the single lgbm_q50.txt artifact.
+    """
     results: dict[str, TrainResult] = {}
     for alpha in QUANTILE_ALPHAS:
         key = f"q{int(alpha * 100):02d}"
+
+        if key == "q50":
+            seed_files = sorted(MODELS_DIR.glob("lgbm_q50_seed*.txt"))
+            seed_metas = sorted(MODELS_DIR.glob("lgbm_q50_seed*.json"))
+            if seed_files and len(seed_files) == len(seed_metas):
+                boosters = [lgb.Booster(model_file=str(p)) for p in seed_files]
+                meta = json.loads(seed_metas[0].read_text())
+                results[key] = TrainResult(
+                    model=EnsembleBooster(boosters),
+                    feature_cols=meta["feature_cols"],
+                    metrics={"ensemble_size": len(boosters), **meta.get("metrics", {})},
+                )
+                continue
+
         model_path = MODELS_DIR / f"lgbm_{key}.txt"
         meta_path  = MODELS_DIR / f"lgbm_{key}.json"
         if not model_path.exists() or not meta_path.exists():

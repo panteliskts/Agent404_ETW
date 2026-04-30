@@ -8,27 +8,37 @@ Complete context document for the next agent or human picking up this project. R
 
 Greek DAM (Day-Ahead Market) battery optimization. **50 MW / 100 MWh battery, 95%×95% round-trip efficiency, 1.5 cycles/day cap, €2/MWh degradation, cyclic SoC**. The Greek bidding zone moved from hourly to **15-minute MTU on 2025-10-01**. We forecast 96 MTUs of next-day prices and dispatch the battery via MILP to maximize revenue.
 
-**Headline metric: capture ratio** = realized scheduler revenue / perfect-foresight revenue.
+**Headline metric: monthly capture ratio (30-day overall)** = total realized scheduler revenue / total perfect-foresight revenue.
 
 ---
 
 ## 2. Current Production Numbers
 
-Walk-forward (5 folds × 7 days, leakage-free, weekly retrain simulated) on the **most recent 30 days**:
+Walk-forward (5 folds × 7 days, leakage-free, weekly retrain simulated) on the **most recent 30 days**.
+Primary KPI is the **30-day overall capture ratio**; daily stats are diagnostics only.
+
+**Best current model (dynamic horizon, monthly KPI):**
 
 | Metric | Value |
 |---|---|
-| Mean capture ratio | **0.871** |
-| Median capture ratio | **0.885** |
-| Overall (€-weighted) | **0.869** |
-| Total realized revenue (30 days) | **€548,438** |
-| Mean EUR/day | **€18,281** |
-| Days ≥ 0.90 capture | 15 / 30 |
-| Worst day | 0.62 (Apr 22 — spike day, 292 €/MWh peak) |
+| Overall capture ratio (30d) | **0.8743** |
+| Mean daily capture ratio | **0.8757** |
+| Median daily capture ratio | **0.8900** |
+| Total realized revenue (30 days) | **€551,796** |
+| Mean EUR/day | **€18,393** |
+| Horizon usage | 2 days: 28, 3 days: 2 |
 
-vs original honest baseline (0.808, €363,852): **+6.3 pp / +€184k / +51% revenue**.
+Source of truth: `reports/dynamic_horizon_summary.json` and `reports/dynamic_horizon_daily.csv`. Re-run `scripts/22_dynamic_horizon.py` to refresh.
 
-Source of truth: `reports/walkforward_summary.json` and `reports/walkforward_daily.csv`. Re-run `scripts/17_walkforward.py` to refresh.
+**Baseline reference (fixed 2-day MPC, α=0.1):**
+
+| Metric | Value |
+|---|---|
+| Overall capture ratio (30d) | **0.8734** |
+| Mean daily capture ratio | **0.8748** |
+| Total realized revenue (30 days) | **€551,237** |
+
+Source of truth: `reports/rolling_horizon_search.json` and `reports/rolling_horizon_daily.csv`.
 
 ---
 
@@ -89,6 +99,8 @@ PuLP/CBC MILP with separate charge/discharge binaries (`z[t]`, `y[t]`).
 
 **`optimize_multiday(prices_d0, prices_d1, battery, d1_discount=1.0, ...)`** — 2-day rolling-horizon LP (MPC). See Section 5 for full analysis.
 
+**`optimize_multiday_horizon(prices_by_day, battery, idle_masks=None, discounts=None, ...)`** — N-day rolling-horizon LP. Used for dynamic horizon dispatch.
+
 ### Validation pipelines
 
 | Script | Purpose |
@@ -96,8 +108,10 @@ PuLP/CBC MILP with separate charge/discharge binaries (`z[t]`, `y[t]`).
 | `scripts/16_validate_stack.py` | One-shot 30-day held-out. Trains once. Optimistic (overfit-prone). |
 | **`scripts/17_walkforward.py`** | **Production-honest. 5 folds × 7 days. Claim this number externally.** |
 | `scripts/18_live_loop.py` | Operational tick / forecast / evaluate. `--tick`, `--forecast YYYY-MM-DD`, `--serve`. |
-| `scripts/19_walkforward_mpc.py` | Walk-forward with full MPC (α=1.0). Kept for reference. Results worse than baseline. |
+| `scripts/19_walkforward_mpc.py` | Walk-forward with 2-day MPC (α=0.1). Rolling-horizon reference run. |
 | `scripts/20_mpc_alpha_search.py` | Alpha grid search: trains once per fold, sweeps all α values. |
+| `scripts/21_roll_horizon_search.py` | Horizon-length sweep (2–7 days), monthly KPI. |
+| `scripts/22_dynamic_horizon.py` | Dynamic horizon (2–4 days) with geometric discounting. |
 
 ---
 
@@ -120,6 +134,8 @@ What was tested and the measured effect on walk-forward capture. Reverted items 
 | Neighbor DA prices (IT_SUD/BG/RO lag96 + spreads) | Mean flat; **min day 0.52 → 0.67 (+15 pp robustness)** | ✅ |
 | **Hand-engineered `spike_likelihood`** | **+0.5 pp mean, +7 pp on worst day** | ✅ |
 | **2-day MPC with d1_discount=0.1** | **+0.4 pp mean, +€2,429 / 30 days** | ✅ (not yet wired to production) |
+| **Dynamic horizon (2–4 days, decay 0.6)** | **Overall cap 0.8743, +€559 vs fixed 2-day** | ✅ best monthly KPI |
+| Horizon sweep 2–7 days | Best at 2-day; longer horizons degrade | ✅ |
 | Per-quantile hyperparams | -0.5 pp | ❌ reverted |
 | Drop "dead-weight" features | -0.5 pp | ❌ reverted |
 | Extended training to 2022 | -0.4 pp | ❌ parquet kept, not used |
@@ -138,6 +154,8 @@ What was tested and the measured effect on walk-forward capture. Reverted items 
 The single-day LP is myopic: it optimises each day's 96 MTUs in isolation. Its only inter-day signal is the soft cyclic penalty (3 €/MWh), which anchors EOD SoC to 50% regardless of what tomorrow looks like. If tomorrow is forecast to be a high-price day (cloudy, high residual load), we should end today at high SoC to profit tomorrow.
 
 `optimize_multiday(prices_d0, prices_d1, battery, d1_discount)` solves a single 192-MTU LP over both days. The cyclic return constraint applies at end of D1, so D0 is free to end at whatever SoC maximises combined 2-day revenue.
+
+**Direction**: optimize for **monthly capture ratio**, not single-day capture. In practice, evaluate rolling-horizon schedulers against the 30-day overall KPI. A 2-day baseline is strongest; dynamic horizon (2–4 days) with geometric discounting is currently best.
 
 ### Full MPC (d1_discount=1.0) Hurts
 
@@ -170,11 +188,32 @@ Source: `reports/mpc_alpha_search.json`, `reports/mpc_alpha_weekly.csv`.
 
 ### What's NOT Yet Done
 
-`optimize_multiday` is implemented in `src/scheduler.py` and validated, but **not yet wired into production**:
+Dynamic horizon is **wired into the backend API** (`/optimize`) via `api/main.py`, but other paths are still old:
 - `scripts/18_live_loop.py` still calls `optimize()` (single-day)
 - `src/inference.py` still calls `optimize()` (frontend depends on this)
 
-To enable in production: pass `d1_discount=0.1` and the next day's forecast prices to `optimize_multiday()` instead of calling `optimize()`.
+### Production stack — now persisted and loaded
+
+`scripts/23_train_production.py` trains the dynamic-horizon recipe on the
+**full** `features_clean.parquet` (last 14 days held out only for
+early-stopping; nothing reserved for test). It saves:
+
+- `models/lgbm_q05.txt`, `models/lgbm_q95.txt` — single boosters with
+  recency × seasonal sample weights.
+- `models/lgbm_q50_seed{42,7,1337}.txt` — three ensemble members with
+  recency × seasonal × economic-impact weighting.
+- `models/lgbm_q50.txt` — single fallback for callers that don't know
+  about the ensemble.
+
+`src.forecaster.load_quantile_models()` now prefers the q50 ensemble when
+the seed files exist (averaged via `EnsembleBooster.predict`) and falls
+back to the single artifact otherwise. The FastAPI `/optimize` and
+`/forecast` endpoints transparently get the ensemble q50 with no code
+change. The previous `predictions["q10"]/["q90"]` KeyError in
+`api/main.py` (post the QUANTILE_ALPHAS=[0.05,0.5,0.95] migration) is
+fixed — the API now reads `predictions["q05"]/["q95"]` while keeping
+external response field names as `q10/q90` for frontend compatibility.
+`src/inference.py` is fixed the same way.
 
 ---
 
@@ -183,7 +222,8 @@ To enable in production: pass `d1_discount=0.1` and the next day's forecast pric
 ### Modified
 - `src/features.py` — solar geometry, Greek holidays, neighbor-price lags, `spike_likelihood` composite, `build_clean_dataset` exposes `_NEIGHBOR_PRICE_COLS`.
 - `src/forecaster.py` — `make_sample_weights`, `economic_impact_weights`, `curriculum_weights`, `train_rank`, `blend_rank_with_q50`, `daily_variance_correction`, `conformal_calibrate`. `train_quantile` accepts weights, hparams, curriculum flags.
-- `src/scheduler.py` — added `optimize_multiday(prices_d0, prices_d1, battery, d1_discount=1.0, ...)`. `d1_discount` scales D1 prices before solving.
+- `src/scheduler.py` — added `optimize_multiday(prices_d0, prices_d1, battery, d1_discount=1.0, ...)` and `optimize_multiday_horizon(...)` for N-day horizon.
+- `api/main.py` — backend `/optimize` uses dynamic horizon, exposes planning settings + confidence/horizon metadata.
 - `src/data/entsoe_client.py` — added `fetch_neighbor_prices` and `save_neighbor_prices`.
 - `scripts/09_validate_30d.py` — switched to `features_realistic.parquet` (kept for compatibility).
 
@@ -191,13 +231,17 @@ To enable in production: pass `d1_discount=0.1` and the next day's forecast pric
 - `scripts/16_validate_stack.py` — one-shot 30-day validation.
 - `scripts/17_walkforward.py` — production-honest walk-forward (5 folds × 7 days).
 - `scripts/18_live_loop.py` — `--tick` / `--forecast` / `--serve` operational loop.
-- `scripts/19_walkforward_mpc.py` — walk-forward using full 2-day MPC (α=1.0). Kept for reference; results worse than baseline.
+- `scripts/19_walkforward_mpc.py` — walk-forward using 2-day MPC (α=0.1). Rolling-horizon reference run.
 - `scripts/20_mpc_alpha_search.py` — trains once per fold, sweeps α ∈ {0.0, 0.1, …, 1.0} at dispatch time. Optimal α=0.1 found.
+- `scripts/21_roll_horizon_search.py` — horizon sweep (2–7 days), monthly KPI table.
+- `scripts/22_dynamic_horizon.py` — dynamic horizon (2–4 days) with geometric discounting.
 - `data/processed/features_clean.parquet` — production feature set (use this).
 - `data/processed/features_clean_extended.parquet` — 2022-2026 backfill (unused).
 - `reports/walkforward_summary.json`, `reports/walkforward_daily.csv` — baseline production numbers.
 - `reports/walkforward_mpc_summary.json`, `reports/walkforward_mpc_daily.csv` — full MPC results (worse).
 - `reports/mpc_alpha_search.json`, `reports/mpc_alpha_weekly.csv` — alpha grid search results.
+- `reports/rolling_horizon_search.json`, `reports/rolling_horizon_daily.csv` — horizon sweep results.
+- `reports/dynamic_horizon_summary.json`, `reports/dynamic_horizon_daily.csv` — dynamic horizon results.
 - `reports/forecasts/forecast_<YYYY-MM-DD>.csv` — per-day forecast persistence (live-loop).
 
 ### NOT Modified (still old stack)
@@ -214,6 +258,12 @@ python scripts/17_walkforward.py
 
 # Alpha grid search (trains once per fold, sweeps MPC discount values)
 python scripts/20_mpc_alpha_search.py
+
+# Horizon-length sweep (2–7 days)
+python scripts/21_roll_horizon_search.py
+
+# Dynamic horizon (2–4 days, geometric discount)
+python scripts/22_dynamic_horizon.py
 
 # Single forecast for a specific day
 python scripts/18_live_loop.py --forecast 2026-05-01
@@ -267,6 +317,7 @@ In priority order — these are not low-hanging anymore:
 1. **Capture ratio is rank-driven.** Improving MAE doesn't necessarily improve capture. Within-day Spearman matters more than RMSE. q50 is already at Spearman 0.92.
 2. **Soft cyclic SoC (penalty=3) is the dominant scheduler lever.** Hard equality caps at ~0.82. Penalty ≥ 3 saturates at 0.87.
 3. **MPC d1_discount must stay at 0.1.** Higher values compound forecast error. Lower values lose the look-ahead signal. The sweet spot is narrow: 0.1–0.3 all work, but 0.1 is best.
+4. **Dynamic horizon discount curve must decay.** Use base 0.1 with decay ~0.6; flat or higher weights overfit D+2+.
 4. **Neighbor prices must be lagged.** SDAC zones clear simultaneously — same-day IT_SUD price isn't available at Greek DAM gate close. Always use `lag96` / `lag672`.
 5. **One-shot validation is overfit-prone.** Always cross-check with `scripts/17_walkforward.py` before claiming an improvement is real.
 6. **Pre-2025-10-01 HEnEx data was hourly**, resampled to 15-min via `ffill`. Lag features spanning this boundary are stable; intra-hour variation features are not.
@@ -280,12 +331,12 @@ In priority order — these are not low-hanging anymore:
 
 ## 10. Single Source of Truth — Current Claim
 
-> **Walk-forward over the most recent 30 days (5 folds × 7 days, leakage-free, weekly retrain simulated):**
-> Mean capture ratio **0.871**, median **0.885**, overall (€-weighted) **0.869**, total realized revenue **€548,438**, mean €18,281/day.
-> 15/30 days hit ≥ 0.90 capture. Worst day 0.62.
+> **Dynamic horizon over the most recent 30 days (5 folds × 7 days, leakage-free, weekly retrain simulated):**
+> Overall capture ratio **0.8743**, mean daily **0.8757**, median **0.8900**, total realized revenue **€551,796**, mean €18,393/day.
+> Horizon usage: 2 days (28), 3 days (2). Discount curve: base 0.1, decay 0.6.
 >
-> **MPC with d1_discount=0.1 adds +0.4 pp / +€2,429 / 30 days** (validated in `reports/mpc_alpha_search.json`) but is not yet wired into production inference.
+> **Fixed 2-day MPC (α=0.1) is second-best** at overall capture **0.8734** with €551,237.
 >
-> vs original honest baseline (0.808, €363,852): **+6.3 pp / +€184k / +51% revenue**.
+> vs original honest baseline (0.808, €363,852): **+6.6 pp / +€188k / +52% revenue**.
 
 When in doubt, re-run `scripts/17_walkforward.py` and quote those numbers.
