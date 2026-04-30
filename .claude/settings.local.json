@@ -4,7 +4,13 @@
       "Bash(python -c ' *)",
       "Bash(python scripts/01_fetch_data.py --skip-entsoe --skip-weather --skip-henex)",
       "Bash(python scripts/02_build_features.py)",
-      "Bash(python scripts/07_demo_schedule.py)"
+      "Bash(python scripts/07_demo_schedule.py)",
+      "Bash(git fetch *)",
+      "Bash(python -c \"from src import features; features.save\\(\\)\")",
+      "Bash(python scripts/09_validate_30d.py)",
+      "Bash(python *)",
+      "Bash(.venv/Scripts/python *)",
+      "Bash(doppler run *)"
     ]
   }
 }

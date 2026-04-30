@@ -41,7 +41,9 @@ def pinball_loss(y_true, y_pred, alpha):
 
 
 def main():
-    df = pd.read_parquet(PROCESSED_DIR / "features.parquet")
+    # Realistic features: only data available at DAM gate close (D-1 ~12:00).
+    # Excludes lag1/lag4/lag8 which leak realized prices from the test window.
+    df = pd.read_parquet(PROCESSED_DIR / "features_realistic.parquet")
     df = df.dropna(subset=[TARGET]).sort_index()
     end = df.index.max()
     test_start = end - pd.Timedelta(days=TEST_DAYS)

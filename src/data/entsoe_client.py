@@ -28,6 +28,25 @@ def fetch_dam_prices(start: str, end: str) -> pd.Series:
     return px
 
 
+def fetch_neighbor_prices(start: str, end: str, zones: tuple[str, ...] = ("IT_SUD", "BG", "RO")) -> pd.DataFrame:
+    """DA hourly prices for zones coupled to Greece via SDAC.
+
+    These cannot be used at gate close for the same delivery day (all SDAC
+    markets clear simultaneously) — features.py exposes them via lag96/lag672
+    only. Romania, Italy-South, Bulgaria are the most relevant adjacent zones.
+    """
+    s, e = _ts(start, end)
+    out = {}
+    cli = _client()
+    for z in zones:
+        try:
+            px = cli.query_day_ahead_prices(z, start=s, end=e)
+            out[f"da_price_{z.lower()}_eur_mwh"] = px
+        except Exception as exc:
+            print(f"[entsoe] zone {z} skipped: {type(exc).__name__}")
+    return pd.DataFrame(out) if out else pd.DataFrame()
+
+
 def fetch_load_forecast(start: str, end: str) -> pd.Series:
     s, e = _ts(start, end)
     df = _client().query_load_forecast(GR_BIDDING_ZONE, start=s, end=e)
@@ -85,3 +104,13 @@ def save_all(start: str, end: str) -> None:
         else:
             obj.to_parquet(path)
         print(f"  saved {path.name}  rows={len(obj)}")
+
+
+def save_neighbor_prices(start: str, end: str) -> Path:
+    df = fetch_neighbor_prices(start, end)
+    if df.empty:
+        raise RuntimeError("No neighbor prices fetched")
+    path = RAW_DIR / f"entsoe_neighbor_prices_{start}_{end}.parquet"
+    df.to_parquet(path)
+    print(f"  saved {path.name}  rows={len(df)}  cols={list(df.columns)}")
+    return path
