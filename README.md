@@ -11,6 +11,7 @@ Battery energy storage dispatch optimisation — Greek DAM / ENTSO-E edition
 | Field    | Value                              |
 | -------- | ---------------------------------- |
 | URL      | <https://logicvolt.vardalas.com/>  |
+| pitch    |https://drive.google.com/file/d/1vgtYiou011mC5JJEUI69tz9pgypzd4BV/view|
 | Username | `admin`                            |
 | Password | `admin`                            |
 
