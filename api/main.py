@@ -472,8 +472,9 @@ def _forecast_window() -> tuple[pd.DataFrame, pd.DataFrame, str]:
 
     # LightGBM handles missing feature values, so keep the latest real price
     # rows instead of filtering the window down to sparse fully-complete rows.
-    window = features.dropna(subset=[TARGET]).tail(48).copy()
-    if len(window) < 48:
+    # At 15-min resolution, 192 rows = 48 hours (2 full days for the optimizer).
+    window = features.dropna(subset=[TARGET]).tail(192).copy()
+    if len(window) < 96:
         raise HTTPException(status_code=503, detail="not enough complete rows for a 48-hour forecast")
 
     predictions = forecaster.predict_interval(models, window)

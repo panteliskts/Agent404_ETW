@@ -364,38 +364,161 @@ def _add_extra_composites(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_WEATHER_VARS = ("temperature_2m", "wind_speed_100m", "cloud_cover", "shortwave_radiation")
+_CITIES = ("athens", "thessaloniki", "patras", "crete")
+
+# Columns that the production models were trained with but come from ENTSO-E
+# generation/load actuals — not present in the cache. We add their 96-period
+# lag versions as NaN so LightGBM can predict (it handles NaN natively).
+_LEAKY_LAG_COLS = (
+    "gen_lignite_mw", "gen_gas_mw", "gen_hydro_mw",
+    "gen_renewables_mw", "gen_crete_renewables_mw", "gen_crete_conventional_mw",
+    "production_total_mw",
+    "load_hv_mw", "load_mv_mw", "load_lv_mw", "system_losses_mw",
+    "load_crete_mw", "demand_total_mw", "load_total_mw",
+    "volume_mainland_mwh",
+    "res_share", "net_export_mw", "gas_share_production",
+)
+
+_NEIGHBOR_COLS = ("da_price_it_sud_eur_mwh", "da_price_bg_eur_mwh", "da_price_ro_eur_mwh")
+
+
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Adds all derived features to a pre-loaded, merged DataFrame.
     df must have dam_price_eur_mwh on a tz-aware DatetimeIndex.
-    Lags require at least 7 days of history; rows with NaN lags are kept
-    so callers can decide how to handle them.
+    Produces the full column set expected by the production models; missing
+    source columns are left as NaN (LightGBM handles them natively).
     """
     df = df.copy()
     if df.index.tz is None:
         df.index = df.index.tz_localize(GR_TIMEZONE)
 
     df = df.join(_calendar_features(df.index), how="left")
-    df = _add_lags(df, "dam_price_eur_mwh", LAG_PERIODS_15M)
-    df = _add_rolls(df, "dam_price_eur_mwh", ROLL_WINDOWS_15M)
 
-    # Residual load (if load + RES columns present)
+    # Price lags and rolling stats matching the realistic (clean-dataset) set
+    df = _add_lags(df, "dam_price_eur_mwh", LAG_PERIODS_REALISTIC)
+    df = _add_rolls(df, "dam_price_eur_mwh", ROLL_WINDOWS_REALISTIC, shift=ROLL_SHIFT_REALISTIC)
+
+    # Aggregate per-city weather into national averages/stds expected by models
+    for var in _WEATHER_VARS:
+        cols = [f"{c}_{var}" for c in _CITIES if f"{c}_{var}" in df.columns]
+        if cols:
+            df[f"gr_avg_{var}"] = df[cols].mean(axis=1)
+            df[f"gr_std_{var}"] = df[cols].std(axis=1)
+            df = df.drop(columns=cols)
+
+    # Drop per-city columns not needed by models
+    drop_weather = []
+    for c in _CITIES:
+        for v in ("wind_direction_100m", "direct_radiation", "diffuse_radiation"):
+            col = f"{c}_{v}"
+            if col in df.columns:
+                drop_weather.append(col)
+    if drop_weather:
+        df = df.drop(columns=drop_weather)
+
+    # Composite features from forecast columns
+    load = df.get("load_forecast_mw")
+    solar = df.get("forecast_solar_mw")
+    wind = df.get("forecast_wind_onshore_mw")
+
+    if load is not None and solar is not None and wind is not None:
+        safe_load = load.replace(0, np.nan)
+        res_total = solar.fillna(0) + wind.fillna(0)
+        df["res_penetration"] = res_total / safe_load
+        df["solar_load_ratio"] = solar.fillna(0) / safe_load
+        df["wind_load_ratio"] = wind.fillna(0) / safe_load
+        if PRICE_COL in df.columns:
+            df["collapse_risk"] = df["res_penetration"] * df[PRICE_COL].shift(4).clip(lower=0)
+        if "hour" in df.columns:
+            midday = df["hour"].between(10, 14)
+            df["solar_surplus_midday"] = df["solar_load_ratio"].where(midday, 0)
+
+    if load is not None and solar is not None and wind is not None:
+        cloud_cols = [c for c in df.columns if c.endswith("_cloud_cover")]
+        cloud_avg = df[cloud_cols].mean(axis=1) if cloud_cols else pd.Series(0.5, index=df.index)
+
+        thermal = (load.fillna(0) - solar.fillna(0) - wind.fillna(0)).clip(lower=0)
+        safe_load2 = load.replace(0, np.nan)
+        if "hour" in df.columns:
+            grp = df.groupby(df["hour"])
+            thermal_mu = grp["load_forecast_mw"].transform(
+                lambda s: s.rolling(96 * 30, min_periods=96).mean().shift(96)
+            )
+            thermal_z = (thermal - thermal_mu) / thermal_mu.replace(0, np.nan)
+        else:
+            thermal_z = thermal / safe_load2
+        thermal_z = thermal_z.fillna(0).clip(-2, 5)
+
+        cloud_term = (cloud_avg / 100.0).clip(0, 1) if cloud_avg.max() > 1.0 else cloud_avg.clip(0, 1)
+        solar_def_term = (1.0 - df.get("solar_load_ratio", pd.Series(0, index=df.index))).clip(0, 1)
+        thermal_term = thermal_z.clip(0, 2) / 2.0
+        if "hour" in df.columns:
+            evening_term = df["hour"].between(17, 22).astype(float)
+            morning_ramp_term = df["hour"].between(6, 9).astype(float) * 0.5
+        else:
+            evening_term = pd.Series(0, index=df.index)
+            morning_ramp_term = pd.Series(0, index=df.index)
+        weekday_term = (1.0 - df.get("is_weekend", pd.Series(0, index=df.index)).astype(float))
+
+        raw = (
+            0.20 * cloud_term
+            + 0.30 * solar_def_term
+            + 0.25 * thermal_term
+            + 0.15 * (evening_term + morning_ramp_term).clip(0, 1)
+            + 0.10 * weekday_term
+        )
+        df["spike_likelihood"] = raw.clip(0, 1)
+        days_idx = (
+            df.index.normalize() if df.index.tz is None
+            else df.index.tz_convert(df.index.tz).normalize()
+        )
+        df["spike_likelihood_daymax"] = df["spike_likelihood"].groupby(days_idx).transform("max")
+
+    # National solar radiation
+    rad_cols = [c for c in df.columns if c.endswith("_shortwave_radiation")]
+    if len(rad_cols) >= 2:
+        df["national_solar_radiation"] = df[rad_cols].mean(axis=1)
+
+    # Residual load forecast
     if "load_forecast_mw" in df.columns and "res_total_forecast_mw" in df.columns:
-        df["residual_load_mw"] = df["load_forecast_mw"] - df["res_total_forecast_mw"]
-        # Greek-specific: midday (11-15) and evening (18-22) rolling means
-        df["midday_res_load"] = (
-            df["residual_load_mw"].where((df["hour"] >= 11) & (df["hour"] <= 15))
-            .rolling(96, min_periods=1).mean()
-        )
-        df["evening_res_load"] = (
-            df["residual_load_mw"].where((df["hour"] >= 18) & (df["hour"] <= 22))
-            .rolling(96, min_periods=1).mean()
-        )
-        df["evening_ramp"] = df["evening_res_load"] - df["midday_res_load"]
+        df["residual_load_forecast_mw"] = df["load_forecast_mw"] - df["res_total_forecast_mw"]
 
     # CCGT short-run marginal cost proxy
     if {"ttf_eur_mwh", "eua_eur_t"}.issubset(df.columns):
         df["ccgt_srmc_eur_mwh"] = df["ttf_eur_mwh"] * 2.0 + df["eua_eur_t"] * 0.37
+
+    # Neighbor zone price lags (present in raw when ENTSO-E is live; NaN from cache)
+    for col in _NEIGHBOR_COLS:
+        lag96_col = f"{col}_lag96"
+        lag672_col = f"{col}_lag672"
+        if col in df.columns:
+            df[lag96_col] = df[col].shift(ROLL_SHIFT_REALISTIC)
+            df[lag672_col] = df[col].shift(ROLL_SHIFT_REALISTIC * 7)
+            if "dam_price_eur_mwh_lag96" in df.columns:
+                df[f"{col.replace('_eur_mwh','')}_minus_gr_lag96"] = (
+                    df[lag96_col] - df["dam_price_eur_mwh_lag96"]
+                )
+            df = df.drop(columns=[col])
+        else:
+            # Add as NaN so LightGBM can still predict
+            for lag_col in (lag96_col, lag672_col):
+                if lag_col not in df.columns:
+                    df[lag_col] = np.nan
+            minus_col = f"{col.replace('_eur_mwh','')}_minus_gr_lag96"
+            if minus_col not in df.columns:
+                df[minus_col] = np.nan
+
+    # ENTSO-E generation/load lagged columns — NaN when not in source data
+    for col in _LEAKY_LAG_COLS:
+        lag_col = f"{col}_lag96"
+        if lag_col not in df.columns:
+            if col in df.columns:
+                df[lag_col] = df[col].shift(ROLL_SHIFT_REALISTIC)
+                df = df.drop(columns=[col])
+            else:
+                df[lag_col] = np.nan
 
     df["mtu_15m_active"] = (df.index >= pd.Timestamp(MTU_SWITCH_DATE, tz=GR_TIMEZONE)).astype(int)
 
