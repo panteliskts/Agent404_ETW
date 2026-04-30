@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { getSession } from "@/lib/api";
 
 const dataFeeds = [
   { name: "HEnEx", detail: "Day-Ahead Market prices", status: "Connected" },
@@ -36,6 +40,56 @@ const workflow = [
 ];
 
 export default function OnboardingPage() {
+  const [authState, setAuthState] = useState<"checking" | "authenticated" | "anonymous">("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkSession() {
+      try {
+        await getSession();
+        if (!cancelled) {
+          setAuthState("authenticated");
+        }
+      } catch {
+        if (!cancelled) {
+          setAuthState("anonymous");
+        }
+      }
+    }
+
+    void checkSession();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (authState === "checking") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f7] px-4 text-[#17202a]">
+        <section className="enterprise-panel w-full max-w-md rounded-lg p-6 text-center">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">Onboarding</div>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-950">Checking session</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">Verifying your authenticated workspace access.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (authState === "anonymous") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f7] px-4 text-[#17202a]">
+        <section className="enterprise-panel w-full max-w-md rounded-lg p-6 text-center">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-700">Protected page</div>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-950">Sign in required</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">Battery setup workflows are only available inside an authenticated LogicVolt session.</p>
+          <Link className="enterprise-button mt-5 inline-flex rounded-lg px-4 py-3 text-sm font-semibold transition" href="/login?next=/onboarding">
+            Go to sign in
+          </Link>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#f3f5f7] px-4 py-6 text-[#17202a] md:px-8">
       <div className="mx-auto max-w-7xl space-y-5">
@@ -49,7 +103,7 @@ export default function OnboardingPage() {
               </p>
             </div>
             <nav className="flex flex-wrap gap-2 text-sm font-semibold">
-              <Link className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-700 transition hover:border-teal-500 hover:text-teal-700" href="/">
+              <Link className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-700 transition hover:border-teal-500 hover:text-teal-700" href="/dashboard">
                 Dashboard
               </Link>
               <Link className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-700 transition hover:border-teal-500 hover:text-teal-700" href="/account">
