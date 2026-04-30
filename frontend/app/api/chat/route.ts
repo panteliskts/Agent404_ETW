@@ -16,6 +16,33 @@ const KNOWLEDGE_BASE_PATHS = [
   path.resolve(process.cwd(), "docs", "CHATBOT_KNOWLEDGE_BASE.md")
 ];
 
+// Allowed origins: same-host is always OK; additionally any origin explicitly
+// listed in CHAT_ALLOWED_ORIGINS (comma-separated) or derivable from
+// NEXT_PUBLIC_API_URL / APP_ALLOWED_ORIGINS (the FastAPI CORS list).
+function buildAllowedOriginSet(): Set<string> {
+  const raw = [
+    process.env.CHAT_ALLOWED_ORIGINS ?? "",
+    process.env.APP_ALLOWED_ORIGINS ?? "",
+    process.env.NEXT_PUBLIC_API_URL ?? "",
+  ]
+    .join(",")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const hosts = new Set<string>();
+  for (const entry of raw) {
+    try {
+      hosts.add(new URL(entry).host);
+    } catch {
+      // not a URL — ignore
+    }
+  }
+  return hosts;
+}
+
+const EXTRA_ALLOWED_HOSTS = buildAllowedOriginSet();
+
 function loadKnowledgeBase() {
   const knowledgePath = KNOWLEDGE_BASE_PATHS.find((candidate) => existsSync(candidate));
   if (!knowledgePath) {
@@ -59,15 +86,24 @@ function isAllowedOrigin(request: Request) {
   const origin = request.headers.get("origin");
   const host = request.headers.get("host");
 
-  if (!origin || !host) {
-    return true;
+  if (!origin) {
+    return true; // server-to-server or same-origin fetch without origin header
   }
 
+  let originHost: string;
   try {
-    return new URL(origin).host === host;
+    originHost = new URL(origin).host;
   } catch {
     return false;
   }
+
+  // Same host as the Next.js server — always OK.
+  if (host && originHost === host) {
+    return true;
+  }
+
+  // Explicitly configured allowed origins (production domains, etc.).
+  return EXTRA_ALLOWED_HOSTS.has(originHost);
 }
 
 function sanitizeMessages(messages: UIMessage[]) {

@@ -239,7 +239,7 @@ export function listBillingKeys() {
   return requestJson<BillingKeysResponse>("/billing/keys", { cache: "no-store" });
 }
 
-export function setKeyTier(keyId: string, tier: "free" | "pro" | "enterprise") {
+export function setKeyTier(keyId: string, tier: "free" | "payg" | "pro" | "enterprise") {
   return requestJson<{ key_id: string; tier: string; monthly_calls: number; period: string }>(
     `/billing/keys/${encodeURIComponent(keyId)}`,
     { method: "PATCH", body: JSON.stringify({ tier }) }

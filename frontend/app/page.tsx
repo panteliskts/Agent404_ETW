@@ -17,7 +17,8 @@ const loginHref = "/login?next=/dashboard";
 const navItems = [
   { label: "Platform", href: "#platform" },
   { label: "Operations", href: "#operations" },
-  { label: "Security", href: "#security" }
+  { label: "Security", href: "#security" },
+  { label: "Pricing", href: "/pricing" }
 ];
 
 const proofPoints = [

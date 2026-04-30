@@ -572,7 +572,7 @@ export default function AccountPage() {
               <div className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-700">API plans &amp; usage</div>
               <h2 className="mt-2 text-xl font-semibold text-slate-950">Subscription tiers for downstream consumers</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Each API key is on a tier. Free is for evaluation; Pro unlocks webhooks and a 120 req/min budget; Enterprise scales the call quota and adds dedicated rate limits.
+                Attach any API key to a plan. Free is for evaluation; Pay-as-you-go gives full API access billed per optimize call with no monthly commitment; Pro and Enterprise add webhooks, higher rate limits, and volume quotas.
               </p>
             </div>
             <button
@@ -588,26 +588,77 @@ export default function AccountPage() {
             <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{billingError}</div>
           ) : null}
 
-          <div className="mt-5 grid gap-3 lg:grid-cols-3">
-            {tiers.map((tier) => (
-              <div
-                key={tier.name}
-                className={`rounded-lg border p-4 ${tier.name === "pro" ? "border-teal-300 bg-teal-50" : "border-slate-200 bg-white"}`}
-              >
-                <div className="flex items-baseline justify-between">
-                  <div className="text-sm font-semibold text-slate-950">{tier.label}</div>
-                  <div className="text-lg font-semibold text-slate-950">
-                    € {tier.price_eur_month}<span className="text-xs font-medium text-slate-500"> / mo</span>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {tiers.map((tier) => {
+              const isHighlighted = tier.name === "payg" || tier.name === "pro";
+              return (
+                <div
+                  key={tier.name}
+                  className={`relative flex flex-col rounded-lg border p-4 ${
+                    tier.name === "payg"
+                      ? "border-teal-400 bg-teal-50 ring-1 ring-teal-300"
+                      : tier.name === "pro"
+                        ? "border-slate-800 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white"
+                  }`}
+                >
+                  {isHighlighted ? (
+                    <span className={`absolute -top-2.5 left-4 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                      tier.name === "payg" ? "bg-teal-600 text-white" : "bg-amber-400 text-slate-950"
+                    }`}>
+                      {tier.name === "payg" ? "API access" : "Most popular"}
+                    </span>
+                  ) : null}
+
+                  <div className="flex items-start justify-between gap-2">
+                    <div className={`text-sm font-semibold ${tier.name === "pro" ? "text-white" : "text-slate-950"}`}>{tier.label}</div>
                   </div>
+
+                  <div className={`mt-2 text-2xl font-bold ${tier.name === "pro" ? "text-white" : "text-slate-950"}`}>
+                    {tier.name === "payg" ? (
+                      <>
+                        €0<span className="text-xs font-medium text-slate-500"> / mo base</span>
+                      </>
+                    ) : (
+                      <>
+                        €{tier.price_eur_month.toLocaleString()}<span className={`text-xs font-medium ${tier.name === "pro" ? "text-slate-300" : "text-slate-500"}`}> / mo</span>
+                      </>
+                    )}
+                  </div>
+
+                  {tier.payg_price_eur_cents != null ? (
+                    <div className="mt-1 text-xs font-semibold text-teal-700">
+                      + €{(tier.payg_price_eur_cents / 100).toFixed(2)} per optimize call
+                    </div>
+                  ) : null}
+
+                  <ul className={`mt-4 flex-1 space-y-1.5 text-xs leading-5 ${tier.name === "pro" ? "text-slate-300" : "text-slate-600"}`}>
+                    <li className="flex items-center gap-1.5">
+                      <span className={tier.can_use_optimize ? "text-teal-500" : "text-slate-300"}>
+                        {tier.can_use_optimize ? "✓" : "—"}
+                      </span>
+                      Optimize &amp; forecast API
+                    </li>
+                    <li className="flex items-center gap-1.5">
+                      <span className={tier.can_use_webhooks ? "text-teal-500" : "text-slate-300"}>
+                        {tier.can_use_webhooks ? "✓" : "—"}
+                      </span>
+                      Webhook delivery
+                    </li>
+                    <li className="flex items-center gap-1.5">
+                      <span className="text-teal-500">✓</span>
+                      {tier.rate_limit} req / minute
+                    </li>
+                    <li className="flex items-center gap-1.5">
+                      <span className="text-teal-500">✓</span>
+                      {tier.monthly_call_quota === 0
+                        ? "Unlimited calls (metered)"
+                        : `${tier.monthly_call_quota.toLocaleString()} calls / month`}
+                    </li>
+                  </ul>
                 </div>
-                <ul className="mt-3 space-y-1 text-xs leading-5 text-slate-600">
-                  <li>{tier.rate_limit} req / minute</li>
-                  <li>{tier.monthly_call_quota.toLocaleString()} calls / month</li>
-                  <li>Optimize endpoint: {tier.can_use_optimize ? "✓" : "—"}</li>
-                  <li>Webhook delivery: {tier.can_use_webhooks ? "✓" : "—"}</li>
-                </ul>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="mt-5 overflow-hidden rounded-lg border border-slate-200">
@@ -622,7 +673,8 @@ export default function AccountPage() {
               <div className="px-4 py-6 text-center text-sm text-slate-500">No API keys with billing records yet.</div>
             ) : null}
             {billingKeys.map((key) => {
-              const usagePct = key.monthly_call_quota
+              const isPayg = key.tier === "payg";
+              const usagePct = key.monthly_call_quota && !isPayg
                 ? Math.min(100, (key.monthly_calls / key.monthly_call_quota) * 100)
                 : 0;
               return (
@@ -636,20 +688,35 @@ export default function AccountPage() {
                   </div>
                   <div className="text-slate-700">{key.role}</div>
                   <div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                    <span className={`rounded-full border px-2 py-1 text-xs font-semibold ${
+                      key.tier === "payg"
+                        ? "border-teal-300 bg-teal-50 text-teal-700"
+                        : key.tier === "pro" || key.tier === "enterprise"
+                          ? "border-slate-800 bg-slate-950 text-white"
+                          : "border-slate-200 bg-slate-50 text-slate-700"
+                    }`}>
                       {key.tier_label}
                     </span>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-700">
-                      {key.monthly_calls.toLocaleString()} / {key.monthly_call_quota.toLocaleString()}
-                    </div>
-                    <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className={`h-full ${usagePct > 90 ? "bg-amber-500" : "bg-teal-500"}`}
-                        style={{ width: `${usagePct}%` }}
-                      />
-                    </div>
+                    {isPayg ? (
+                      <div className="text-xs text-slate-700">
+                        {key.monthly_calls.toLocaleString()} calls
+                        <span className="ml-1 text-slate-400">(metered)</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-xs text-slate-700">
+                          {key.monthly_calls.toLocaleString()} / {key.monthly_call_quota.toLocaleString()}
+                        </div>
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                          <div
+                            className={`h-full ${usagePct > 90 ? "bg-amber-500" : "bg-teal-500"}`}
+                            style={{ width: `${usagePct}%` }}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="text-right">
                     <select

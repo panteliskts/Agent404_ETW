@@ -39,8 +39,14 @@ TIERS: dict[str, Tier] = {
     "free": Tier(
         name="free", label="Free",
         rate_limit=10, monthly_call_quota=500,
-        can_use_optimize=True, can_use_webhooks=False,
+        can_use_optimize=False, can_use_webhooks=False,
         price_eur_month=0,
+    ),
+    "payg": Tier(
+        name="payg", label="Pay-as-you-go",
+        rate_limit=60, monthly_call_quota=0,          # 0 = unlimited (metered)
+        can_use_optimize=True, can_use_webhooks=False,
+        price_eur_month=0,                            # €0 base + €0.08 / optimize call
     ),
     "pro": Tier(
         name="pro", label="Pro",
@@ -56,6 +62,11 @@ TIERS: dict[str, Tier] = {
     ),
 }
 DEFAULT_TIER = "free"
+
+# Per-call price in EUR cents for metered tiers (key = tier name).
+PAYG_PRICE_EUR_CENTS: dict[str, int] = {
+    "payg": 8,   # €0.08 per /optimize call
+}
 
 
 def _period_key(now: int | None = None) -> str:
@@ -134,6 +145,7 @@ def all_tiers() -> list[dict]:
             "can_use_optimize": t.can_use_optimize,
             "can_use_webhooks": t.can_use_webhooks,
             "price_eur_month": t.price_eur_month,
+            "payg_price_eur_cents": PAYG_PRICE_EUR_CENTS.get(t.name),
         }
         for t in TIERS.values()
     ]

@@ -896,7 +896,7 @@ def test_webhook(
 # ── billing / API plan ───────────────────────────────────────────────────────
 
 class BillingUpdateRequest(BaseModel):
-    tier: str = Field(pattern="^(free|pro|enterprise)$")
+    tier: str = Field(pattern="^(free|payg|pro|enterprise)$")
 
 
 @app.get("/billing/tiers")
@@ -923,6 +923,7 @@ def billing_for_keys(user: AuthenticatedUser = Depends(require_admin)) -> dict:
             "monthly_call_quota": tier.monthly_call_quota,
             "monthly_calls":      snapshot["monthly_calls"],
             "period":             snapshot["period"],
+            "can_use_optimize":   tier.can_use_optimize,
             "can_use_webhooks":   tier.can_use_webhooks,
             "price_eur_month":    tier.price_eur_month,
         })

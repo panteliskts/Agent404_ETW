@@ -175,13 +175,14 @@ export type WebhookCreateResponse = {
 };
 
 export type BillingTier = {
-  name: "free" | "pro" | "enterprise";
+  name: "free" | "payg" | "pro" | "enterprise";
   label: string;
   rate_limit: number;
   monthly_call_quota: number;
   can_use_optimize: boolean;
   can_use_webhooks: boolean;
   price_eur_month: number;
+  payg_price_eur_cents: number | null;
 };
 
 export type BillingTiersResponse = { tiers: BillingTier[] };
@@ -198,6 +199,7 @@ export type BillingKey = {
   monthly_calls: number;
   period: string;
   can_use_webhooks: boolean;
+  can_use_optimize: boolean;
   price_eur_month: number;
 };
 
