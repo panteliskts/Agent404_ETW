@@ -21,13 +21,7 @@ export function ChatWidget() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const transport = useMemo(
-    () =>
-      new DefaultChatTransport({
-        api: "/api/chat"
-      }),
-    []
-  );
+  const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
 
   const { clearError, error, messages, regenerate, sendMessage, status, stop } = useChat({
     transport
