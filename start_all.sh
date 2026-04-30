@@ -228,7 +228,14 @@ else
   (
     cd "$FRONTEND_DIR"
     VERCEL_BIN="$FRONTEND_DIR/node_modules/.bin/vercel"
+    use_vercel=0
     if [[ -x "$VERCEL_BIN" ]]; then
+      if [[ -n "${VERCEL_TOKEN:-}" || -n "${VERCEL_ORG_ID:-}" || -n "${VERCEL_PROJECT_ID:-}" || -n "${VERCEL:-}" ]]; then
+        use_vercel=1
+      fi
+    fi
+
+    if [[ "$use_vercel" -eq 1 ]]; then
       INTERNAL_API_URL="$API_URL" NEXT_PUBLIC_API_URL="$FRONTEND_API_URL" \
         "$VERCEL_BIN" dev --listen "${FRONTEND_HOST}:${FRONTEND_PORT}" --yes
     else
