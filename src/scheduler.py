@@ -212,6 +212,53 @@ def optimize(
     )
 
 
+def optimize_multiday(
+    prices_d0: pd.Series,
+    prices_d1: pd.Series,
+    battery: BatterySpec = DEFAULT_BATTERY,
+    idle_mask_d0: pd.Series | None = None,
+    idle_mask_d1: pd.Series | None = None,
+    d1_discount: float = 1.0,
+    solver_msg: bool = False,
+) -> Schedule:
+    """2-day rolling-horizon LP (Model Predictive Control).
+
+    Optimises charge/discharge jointly over D0 + D1 (up to 192 MTUs).
+    The cyclic-return penalty applies at end of D1, so D0 is free to end
+    at whatever SoC maximises combined 2-day revenue. Returns only D0 schedule.
+
+    d1_discount: scale factor applied to D1 prices before solving (0=ignore D1,
+    1=full weight). Values around 0.3-0.5 hedge against D1 forecast error.
+    """
+    prices_both = pd.concat([prices_d0, prices_d1 * d1_discount])
+    idle_both = None
+    if idle_mask_d0 is not None or idle_mask_d1 is not None:
+        m0 = idle_mask_d0 if idle_mask_d0 is not None else pd.Series(False, index=prices_d0.index)
+        m1 = idle_mask_d1 if idle_mask_d1 is not None else pd.Series(False, index=prices_d1.index)
+        idle_both = pd.concat([m0, m1])
+
+    full = optimize(prices_both, battery=battery, idle_mask=idle_both, solver_msg=solver_msg)
+
+    n0 = len(prices_d0)
+    dh = full.delta_h
+    p0 = prices_d0.values.astype(float)
+    ch0 = full.charge_mw[:n0]
+    dis0 = full.discharge_mw[:n0]
+    rev = float(np.sum(p0 * (dis0 - ch0) * dh))
+    deg = float(np.sum(battery.degradation_eur_per_mwh * (ch0 + dis0) * dh))
+
+    return Schedule(
+        timestamps=prices_d0.index,
+        charge_mw=ch0,
+        discharge_mw=dis0,
+        soc_mwh=full.soc_mwh[:n0],
+        revenue_eur=rev,
+        degradation_eur=deg,
+        objective_eur=rev - deg,
+        delta_h=dh,
+    )
+
+
 def realized_revenue(
     schedule: Schedule,
     realized_prices: pd.Series,
