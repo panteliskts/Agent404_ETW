@@ -1,0 +1,600 @@
+{
+  "summary": [
+    {
+      "alpha": 0.0,
+      "mean_capture": 0.8703,
+      "median_capture": 0.8845,
+      "min_capture": 0.6242,
+      "p10_capture": 0.7185,
+      "overall_capture": 0.869,
+      "std_capture": 0.0899,
+      "total_realized_eur": 548437.77,
+      "delta_eur_vs_baseline": 0.0,
+      "mean_eur_per_day": 18281.26,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8453,
+          "overall_capture": 0.8459,
+          "realized_eur": 120171.51,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8929,
+          "overall_capture": 0.8937,
+          "realized_eur": 134407.24,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9165,
+          "overall_capture": 0.924,
+          "realized_eur": 119878.54,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8324,
+          "overall_capture": 0.8279,
+          "realized_eur": 134746.1,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8502,
+          "overall_capture": 0.8496,
+          "realized_eur": 39234.38,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.1,
+      "mean_capture": 0.8741,
+      "median_capture": 0.8882,
+      "min_capture": 0.6124,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8728,
+      "std_capture": 0.0885,
+      "total_realized_eur": 550867.16,
+      "delta_eur_vs_baseline": 2429.39,
+      "mean_eur_per_day": 18362.24,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8632,
+          "overall_capture": 0.8652,
+          "realized_eur": 122924.92,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8936,
+          "overall_capture": 0.8945,
+          "realized_eur": 134528.92,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9167,
+          "overall_capture": 0.9241,
+          "realized_eur": 119893.99,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.83,
+          "overall_capture": 0.8253,
+          "realized_eur": 134314.39,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.2,
+      "mean_capture": 0.8741,
+      "median_capture": 0.8882,
+      "min_capture": 0.6124,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8728,
+      "std_capture": 0.0886,
+      "total_realized_eur": 550828.02,
+      "delta_eur_vs_baseline": 2390.25,
+      "mean_eur_per_day": 18360.93,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8624,
+          "overall_capture": 0.8643,
+          "realized_eur": 122786.76,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8936,
+          "overall_capture": 0.8945,
+          "realized_eur": 134528.92,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9174,
+          "overall_capture": 0.9249,
+          "realized_eur": 119993.0,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.83,
+          "overall_capture": 0.8253,
+          "realized_eur": 134314.39,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.3,
+      "mean_capture": 0.8737,
+      "median_capture": 0.8882,
+      "min_capture": 0.6152,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8722,
+      "std_capture": 0.0882,
+      "total_realized_eur": 550476.83,
+      "delta_eur_vs_baseline": 2039.06,
+      "mean_eur_per_day": 18349.23,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.86,
+          "overall_capture": 0.8611,
+          "realized_eur": 122338.03,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8936,
+          "overall_capture": 0.8945,
+          "realized_eur": 134528.92,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9176,
+          "overall_capture": 0.925,
+          "realized_eur": 120013.23,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8304,
+          "overall_capture": 0.8258,
+          "realized_eur": 134391.71,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.4,
+      "mean_capture": 0.8703,
+      "median_capture": 0.8846,
+      "min_capture": 0.5994,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8688,
+      "std_capture": 0.0884,
+      "total_realized_eur": 548306.22,
+      "delta_eur_vs_baseline": -131.55,
+      "mean_eur_per_day": 18276.87,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8544,
+          "overall_capture": 0.8554,
+          "realized_eur": 121531.84,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8938,
+          "overall_capture": 0.8947,
+          "realized_eur": 134552.86,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9107,
+          "overall_capture": 0.9177,
+          "realized_eur": 119063.18,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8281,
+          "overall_capture": 0.8231,
+          "realized_eur": 133953.39,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.5,
+      "mean_capture": 0.8685,
+      "median_capture": 0.8812,
+      "min_capture": 0.6012,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8673,
+      "std_capture": 0.0874,
+      "total_realized_eur": 547370.08,
+      "delta_eur_vs_baseline": -1067.69,
+      "mean_eur_per_day": 18245.67,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8471,
+          "overall_capture": 0.8491,
+          "realized_eur": 120627.84,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8933,
+          "overall_capture": 0.8941,
+          "realized_eur": 134469.4,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9107,
+          "overall_capture": 0.9177,
+          "realized_eur": 119063.18,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8284,
+          "overall_capture": 0.8234,
+          "realized_eur": 134004.71,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.6,
+      "mean_capture": 0.8663,
+      "median_capture": 0.8805,
+      "min_capture": 0.6017,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8651,
+      "std_capture": 0.088,
+      "total_realized_eur": 546015.26,
+      "delta_eur_vs_baseline": -2422.51,
+      "mean_eur_per_day": 18200.51,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8379,
+          "overall_capture": 0.8396,
+          "realized_eur": 119285.74,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8929,
+          "overall_capture": 0.8938,
+          "realized_eur": 134425.29,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9107,
+          "overall_capture": 0.9177,
+          "realized_eur": 119063.18,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8286,
+          "overall_capture": 0.8236,
+          "realized_eur": 134036.1,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.7,
+      "mean_capture": 0.8643,
+      "median_capture": 0.8808,
+      "min_capture": 0.6017,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8632,
+      "std_capture": 0.0901,
+      "total_realized_eur": 544786.87,
+      "delta_eur_vs_baseline": -3650.9,
+      "mean_eur_per_day": 18159.56,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8294,
+          "overall_capture": 0.8312,
+          "realized_eur": 118085.98,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8922,
+          "overall_capture": 0.893,
+          "realized_eur": 134300.79,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9107,
+          "overall_capture": 0.9177,
+          "realized_eur": 119063.18,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8292,
+          "overall_capture": 0.8242,
+          "realized_eur": 134131.96,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.8,
+      "mean_capture": 0.8633,
+      "median_capture": 0.8806,
+      "min_capture": 0.6083,
+      "p10_capture": 0.7193,
+      "overall_capture": 0.8626,
+      "std_capture": 0.0898,
+      "total_realized_eur": 544395.12,
+      "delta_eur_vs_baseline": -4042.65,
+      "mean_eur_per_day": 18146.5,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8241,
+          "overall_capture": 0.8271,
+          "realized_eur": 117510.34,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.8922,
+          "overall_capture": 0.893,
+          "realized_eur": 134300.79,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9107,
+          "overall_capture": 0.9177,
+          "realized_eur": 119063.18,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8302,
+          "overall_capture": 0.8253,
+          "realized_eur": 134315.86,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 0.9,
+      "mean_capture": 0.8637,
+      "median_capture": 0.8842,
+      "min_capture": 0.6181,
+      "p10_capture": 0.7172,
+      "overall_capture": 0.863,
+      "std_capture": 0.0894,
+      "total_realized_eur": 544674.62,
+      "delta_eur_vs_baseline": -3763.15,
+      "mean_eur_per_day": 18155.82,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8236,
+          "overall_capture": 0.8266,
+          "realized_eur": 117432.31,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.892,
+          "overall_capture": 0.8927,
+          "realized_eur": 134262.58,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9103,
+          "overall_capture": 0.9174,
+          "realized_eur": 119022.26,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8327,
+          "overall_capture": 0.828,
+          "realized_eur": 134752.51,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.8497,
+          "overall_capture": 0.8489,
+          "realized_eur": 39204.95,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    },
+    {
+      "alpha": 1.0,
+      "mean_capture": 0.8586,
+      "median_capture": 0.8844,
+      "min_capture": 0.6181,
+      "p10_capture": 0.7069,
+      "overall_capture": 0.8571,
+      "std_capture": 0.0948,
+      "total_realized_eur": 540935.26,
+      "delta_eur_vs_baseline": -7502.51,
+      "mean_eur_per_day": 18031.18,
+      "weekly_breakdown": [
+        {
+          "fold": 0,
+          "mean_capture": 0.8214,
+          "overall_capture": 0.8242,
+          "realized_eur": 117090.43,
+          "perfect_eur": 142069.4,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 1,
+          "mean_capture": 0.892,
+          "overall_capture": 0.8927,
+          "realized_eur": 134262.58,
+          "perfect_eur": 150392.17,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 2,
+          "mean_capture": 0.9101,
+          "overall_capture": 0.9172,
+          "realized_eur": 119000.45,
+          "perfect_eur": 129737.59,
+          "idle_threshold": 45.79363846951252
+        },
+        {
+          "fold": 3,
+          "mean_capture": 0.8327,
+          "overall_capture": 0.828,
+          "realized_eur": 134758.34,
+          "perfect_eur": 162748.36,
+          "idle_threshold": 0.0
+        },
+        {
+          "fold": 4,
+          "mean_capture": 0.7823,
+          "overall_capture": 0.7757,
+          "realized_eur": 35823.45,
+          "perfect_eur": 46181.32,
+          "idle_threshold": 17.05980936475697
+        }
+      ]
+    }
+  ],
+  "best_alpha_mean_capture": 0.1,
+  "best_alpha_total_eur": 0.1
+}

@@ -1,306 +1,291 @@
-# Project Handoff — Battery Optimization in the Greek Electricity Market
+# Handoff: Battery Optimization in the Greek DAM
 
-This document is a self-contained briefing for an LLM that has not seen the prior conversation. It contains the problem, the approach, what is built, what remains, and concrete next steps. Read it top to bottom before touching the repo.
-
----
-
-## 0. Recent Work Summary (Last Session Update)
-
-**Goal:** Lower Mean Absolute Error (MAE) from 25.14 €/MWh to ~18–20 €/MWh by removing data leakage and reducing features from 72 to ~35.
-
-**What was done:**
-- Identified that the realistic-lags baseline (25.14 MAE, 7-day CV) still leaks through realized generation/load columns — these are only known *after* the day closes and should not inform a next-day forecast.
-- Added `build_clean_dataset()` function in `src/features.py` that:
-  - Replaces leaky realized columns with their 96-hour lags (use yesterday-at-this-hour)
-  - Aggregates weather observations across 4 Greek cities → 8 aggregate weather features (mean + std per variable)
-  - Drops redundant calendar features (sin/cos pairs already encode hour/day-of-year)
-  - Drops low-value weather (wind direction, direct/diffuse radiation)
-  - **Target: ~35 features** (down from 72)
-- Created `scripts/10_experiment_clean.py` to test the clean dataset on 5-fold rolling-origin CV and compare MAE vs baseline.
-- Existing `scripts/09_validate_30d.py` already retrains models on data before test window (properly removes all leakage).
-
-**What is pending:**
-1. **Run experiment:** `python scripts/10_experiment_clean.py` to see if clean dataset MAE is within ~1 € of 25.14 (i.e., ≤26, ideally 20–22).
-2. **If successful:** Hyperparameter tuning → ensemble 5 seeds → retrain final q10/q50/q90.
-3. **If unsuccessful:** Analyze feature importance to identify which aggregations hurt the most; revert selectively.
-
-**Impact:** If clean dataset achieves ~20 €/MWh MAE, the capture ratio (realized revenue / perfect-foresight revenue) should improve from current 83.2% to potentially 85–90%.
+Complete context document for the next agent or human picking up this project. Read top-to-bottom before touching anything.
 
 ---
 
-## 1. The Problem (from the hackathon brief)
+## 1. The Problem
 
-**Event:** Battery Optimization in the Greek Electricity Market.
+Greek DAM (Day-Ahead Market) battery optimization. **50 MW / 100 MWh battery, 95%×95% round-trip efficiency, 1.5 cycles/day cap, €2/MWh degradation, cyclic SoC**. The Greek bidding zone moved from hourly to **15-minute MTU on 2025-10-01**. We forecast 96 MTUs of next-day prices and dispatch the battery via MILP to maximize revenue.
 
-**Context.** Greece's electricity market is in rapid transition: solar/wind growth → more curtailments, more intraday/day-ahead price volatility. Greece's first standalone batteries entered the Day-Ahead Market (DAM) in test mode in April 2026.
-
-**Deliverable.** Propose a complete battery optimization solution that decides — for every market time unit (MTU) — whether a battery should **charge, discharge, or stay idle**, with the objective of **maximizing economic value** while respecting all technical/operational constraints. Participants must identify and collect their own data sources.
-
-**Key market facts**
-- Day-Ahead Market is operated by **HEnEx** (Hellenic Energy Exchange).
-- Pricing was hourly until **2025-10-01**, then moved to **15-minute MTUs** (96 slots/day).
-- Uniform marginal pricing — clearing price set by the last accepted offer needed to satisfy demand.
-- The brief explicitly emphasizes **data scarcity**: real Greek standalone batteries only entered in April 2026, so there is **no rich historical battery telemetry**. Participants must build a robust optimization framework that produces feasible, profitable schedules with limited asset history.
-
-**Solution shape.** A two-layer architecture:
-1. **Price forecaster** — predicts next-day 15-min DAM prices from market/weather/fuels features.
-2. **Battery scheduler** — optimizes charge/discharge given those prices + battery constraints. This is the *core* deliverable.
-
-**Headline KPI** — *capture ratio* = realized revenue / perfect-foresight revenue. Compare a schedule produced from forecasted prices (and evaluated on realized prices) to a schedule that knew prices in advance.
+**Headline metric: capture ratio** = realized scheduler revenue / perfect-foresight revenue.
 
 ---
 
-## 2. Current Thinking & Strategic Decisions
+## 2. Current Production Numbers
 
-These decisions have already been made in the conversation; do not relitigate them unless the user explicitly asks:
+Walk-forward (5 folds × 7 days, leakage-free, weekly retrain simulated) on the **most recent 30 days**:
 
-- **Approach: MILP for the scheduler, gradient-boosted ML for the forecaster.** MILP is convex over 96 15-min slots, solves in milliseconds, uses `pulp` + CBC. Forecaster is LightGBM baseline; user said "I will probably make a model and train it" — so the forecaster is *deliberately* a swappable scaffold.
-- **Decouple forecaster and scheduler.** Forecaster outputs a price vector; scheduler is forecaster-agnostic. Judges reward this separation.
-- **Battery params are assumed, not learned.** 50 MW / 100 MWh, 95%/95% η, 5–95% SoC, cyclic, 1.5 cycles/day, €2/MWh degradation. Sensitivity analysis is part of the robustness story for the judges.
-- **Training window: 2024-01-01 → 2026-04-30 (28 months).** User explicitly chose this over the full 2021–2026 archive, because the gas-crisis era (2021–2023) had a wildly different price regime that would only confuse the model.
-- **Granularity: native 15-min from Oct 2025 onward; hourly upsampled to 15-min before that.** A `mtu_15m_active` flag lets the model treat the two regimes differently if needed.
-- **Data sources prioritized:** HEnEx (primary, scraped) > Open-Meteo (weather) > yfinance (fuels). ADMIE was deferred — its data overlaps with ENTSO-E. ENTSO-E is wired but blocked on API token approval.
-- **No ADMIE scraper for now.** Reason: ENTSO-E covers the same data (load forecasts, RES forecasts) once the token arrives. The user agreed to defer this.
-- **Capture ratio is the headline KPI.** Realized revenue from forecast-based schedule, divided by perfect-foresight schedule revenue.
-- **Pre-Oct-2025 hourly data is upsampled to 15-min** by forward-fill on prices and time-interpolation on smooth quantities (load, generation, weather). Acceptable lossy compromise; the alternative (training only on Oct 2025+ for 7 months) was deemed too little data.
+| Metric | Value |
+|---|---|
+| Mean capture ratio | **0.871** |
+| Median capture ratio | **0.885** |
+| Overall (€-weighted) | **0.869** |
+| Total realized revenue (30 days) | **€548,438** |
+| Mean EUR/day | **€18,281** |
+| Days ≥ 0.90 capture | 15 / 30 |
+| Worst day | 0.62 (Apr 22 — spike day, 292 €/MWh peak) |
 
-### Things explicitly NOT to do
+vs original honest baseline (0.808, €363,852): **+6.3 pp / +€184k / +51% revenue**.
 
-- Don't build an ADMIE scraper unless the user asks (ENTSO-E will cover the same data via API).
-- Don't try to scrape ICE TTF or EEX EUA directly — they are paywalled. The yfinance proxies (`TTF=F`, `CO2.L`) are the agreed pragmatic substitute.
-- Don't train the forecaster on battery telemetry — there isn't enough. Treat battery params as assumed inputs and run sensitivity instead.
-- Don't add features beyond what's there without strong justification — the dataset has 73 columns already, plenty for tree-based models on 80k rows.
-- Don't expand the training window earlier than 2024 — already discussed and rejected.
+Source of truth: `reports/walkforward_summary.json` and `reports/walkforward_daily.csv`. Re-run `scripts/17_walkforward.py` to refresh.
 
 ---
 
-## 3. Repository State (what is BUILT)
+## 3. Architecture
 
-Project root: `C:\Users\varda\Documents\Hackathons\ETW` (Windows, bash + PowerShell available).
+### Data layer — three feature snapshots in `data/processed/`
 
-```
-ETW/
-├── HANDOFF.md                 # this file
-├── Hackathon_final.docx.pdf   # original brief
-├── requirements.txt
-├── .env.example               # ENTSOE_API_KEY placeholder
-├── config.py                  # paths, BatterySpec, weather locations, GR_TIMEZONE
-├── src/
-│   ├── data/
-│   │   ├── entsoe_client.py   # DAM, load fcst, wind/solar fcst — needs API key
-│   │   ├── henex.py           # HEnEx archive scraper — DONE, 5+ years downloaded
-│   │   ├── weather.py         # Open-Meteo (no key) — DONE
-│   │   └── fuels.py           # yfinance TTF + EUA — DONE
-│   ├── features.py            # builds merged 15-min training dataset — DONE
-│   ├── scheduler.py           # MILP optimizer (pulp + CBC) — DONE
-│   ├── forecaster.py          # LightGBM scaffold — STUB, user will customize
-│   ├── evaluate.py            # perfect-foresight vs forecast vs realized — DONE
-│   └── __init__.py
-├── scripts/
-│   ├── 01_fetch_data.py       # wired for henex/weather/fuels/entsoe
-│   ├── 02_build_features.py   # builds data/processed/features.parquet
-│   ├── 03_train.py            # trains the LightGBM baseline (outdated; user retrains)
-│   ├── 04_backtest.py         # rolling-day backtest with capture ratio KPI
-│   ├── 05_audit.py            # compares Ridge vs LightGBM; feature importance
-│   ├── 06_train_final.py      # trains final q10/q50/q90 with rolling-origin CV
-│   ├── 07_demo_schedule.py    # single-date schedule demo (buy/sell, expected revenue)
-│   ├── 08_validate.py         # 7-day held-out validation on production models
-│   ├── 09_validate_30d.py     # 30-day validation with retraining (no leakage)
-│   └── 10_experiment_clean.py # NEW — tests clean dataset vs realistic-lags baseline
-├── data/
-│   ├── raw/
-│   │   ├── henex/zips/        # cached yearly archives 2021-2025 (large)
-│   │   ├── henex/xlsx/        # extracted daily Excel files
-│   │   ├── henex_results_all.parquet     # 50,880 rows, 2021-2026
-│   │   ├── weather_2024-01-01_2026-04-29.parquet  # 20,400 rows, hourly
-│   │   └── fuels_2024-01-01_2026-04-30.parquet    # 597 rows, daily
-│   └── processed/
-│       └── features.parquet   # ★ TRAINING DATASET: 81,692 × 73, 15-min, 2024-2026
-└── models/                    # populated by scripts/03_train.py
-```
+| Parquet | Use | Notes |
+|---|---|---|
+| `features.parquet` | Legacy, has lag1/lag4/lag8 leakage | **Do not use for validation** |
+| `features_realistic.parquet` | Older leakage-fixed version | Still has unlagged HEnEx market-clearing outputs — also leaky. Kept for backwards compat with old inference path. |
+| **`features_clean.parquet`** | **Production. Use this.** | All market-clearing outputs replaced by lag96. SDAC neighbor prices (IT_SUD/BG/RO) via lag96/lag672 only. ~73 cols. |
 
-### What each module does
+`features_clean_extended.parquet` — same but from 2022-01-01 (backfilled). Not used by default; extended training hurt.
 
-**`config.py`** — defines the `BatterySpec` dataclass (50 MW / 100 MWh defaults), the four weather observation cities (Athens, Thessaloniki, Patras, Crete), `GR_TIMEZONE = "Europe/Athens"`, `MTU_SWITCH_DATE = "2025-10-01"`, and creates required dirs.
+### Feature categories in `features_clean.parquet` (~73 cols)
 
-**`src/data/henex.py`** — scrapes HEnEx publication and archive pages, downloads yearly ZIPs (containing daily Excel files), extracts only DAM files (skips intraday auctions IDA/CRIDA), parses ResultsSummary xlsx files. Parser is **section-aware** (works for both old hourly and new 15-min formats) and DST-tolerant. Picks latest version per date when duplicates exist. Output schema:
+| Category | Count | Top examples |
+|---|---|---|
+| HEnEx market lagged 24h | 18 | `volume_mainland_mwh_lag96`, `gen_hydro_mw_lag96` |
+| Weather aggregated (gr_avg/gr_std) | 9 | `gr_std_cloud_cover`, `gr_avg_cloud_cover` |
+| Calendar | 7 | `sin_tod` (top-15 by gain) |
+| Price lags & rolls | 6 | `dam_price_eur_mwh_lag96` (top-3), `lag672`, `rollmean96` |
+| ENTSO-E forecasts | 5 | **`residual_load_forecast_mw` (top-2)**, `forecast_solar_mw` |
+| Collapse / RES-stress composites | 5 | **`collapse_risk` (top-1)**, `res_penetration` |
+| Solar geometry | 4 | `solar_elevation_deg` |
+| Holidays | 4 | ~0% gain — model uses lag96 implicitly |
+| Fuels | 3 | `ttf_eur_mwh`, `ccgt_srmc_eur_mwh` |
+| Neighbor zone DA prices (lag96/lag672 + spreads) | 9 | **`da_price_it_sud_minus_gr_lag96` (top-15)** |
+| **Hand-engineered spike features** | **2** | **`spike_likelihood`, `spike_likelihood_daymax`** |
 
-```
-volume_mainland_mwh, dam_price_eur_mwh, dam_price_60min_idx_eur_mwh,
-gen_lignite_mw, gen_gas_mw, gen_hydro_mw, gen_renewables_mw,
-gen_crete_renewables_mw, gen_crete_conventional_mw, gen_bess_mw,
-production_total_mw,
-load_hv_mw, load_mv_mw, load_lv_mw, load_pump_mw,
-system_losses_mw, load_crete_mw, demand_total_mw,
-load_bess_mw, renewables_buy_mw
-```
+Top-12 features carry 50% of model gain. Top-30 cover 82%.
 
-**`src/data/weather.py`** — Open-Meteo Archive API (no key). 7 vars × 4 cities = 28 columns. Fetches in UTC then converts to Athens TZ to dodge DST gaps. Hourly resolution.
+### Forecasting stack — `src/forecaster.py`
 
-**`src/data/fuels.py`** — yfinance proxies: `TTF=F` for Dutch TTF gas, `CO2.L` for EUA carbon. Daily settle close. Stored as `ttf_eur_mwh` and `eua_eur_t`. Note: a known yfinance MultiIndex/wide-format quirk was already fixed (we now extract `df["Close"]` defensively).
+1. **Three quantile heads** trained with `objective=quantile`:
+   - `q05`, `q95`: single LightGBM boosters with recency × seasonal sample weights.
+   - `q50`: **ensemble of 3 boosters** (seeds 42, 7, 1337) additionally weighted by **economic-impact** (`∝ |price − daily_mean|`).
 
-**`src/data/entsoe_client.py`** — wraps `entsoe-py` for DAM prices, load forecast, wind/solar forecast, actual load/generation. **BLOCKED on API token approval.** User must email `transparency@entsoe.eu` requesting Restful API access; approval comes within 24h, then a "Generate Token" button appears in account settings.
+2. **Conformal calibration** — `conformal_calibrate()` shifts each quantile by the empirical residual quantile on the validation window. Brings coverage from ~21/70/9 to ~12/84/4 (nominal 5/90/5).
 
-**`src/features.py`** — the merge pipeline:
-1. Loads HEnEx, filters to `>= 2024-01-01`.
-2. Resamples to uniform 15-min grid (ffill for prices, time-interp for smooth quantities).
-3. Joins weather, fuels, ENTSO-E (if present), all on the 15-min grid.
-4. Adds calendar features (sin/cos hour-of-day and day-of-year, dow, weekend, month).
-5. Adds derived: `load_total_mw`, `res_share`, `net_export_mw`, `ccgt_srmc_eur_mwh = TTF*2 + EUA*0.37`.
-6. Adds 7 lag features (15min, 1h, 2h, 6h, 12h, 1d, 1w) and 6 rolling stats (mean+std × 4/16/96).
-7. Adds `mtu_15m_active` regime flag.
-8. Drops columns with >70% NaN. Currently drops: `load_pump_mw`, `dam_price_60min_idx_eur_mwh`, `gen_bess_mw`.
+3. **Dispatch price** — `0.6×q50 + 0.2×q05 + 0.2×q95`. Validation-tuned blend.
 
-**New function:** `build_clean_dataset(start, lag_realized=96)` — gate-close-feasible features:
-- Starts from `build_dataset(..., realistic_lags_only=True)` output (72 cols).
-- Replaces all "leaky realized" columns (gen_*, load_*, production_total_mw, demand_total_mw, res_share, net_export_mw, gas_share_production) with their 96h lags (use yesterday-at-this-hour).
-- Aggregates weather across 4 cities → `gr_avg_*` and `gr_std_*` per variable, drops per-city columns.
-- Drops redundant calendar columns (hour, minute_of_day, doy, month) since sin/cos pairs encode same info.
-- Drops low-value weather (wind_direction, direct_radiation, diffuse_radiation).
-- Target output: ~35 features (down from 72).
+4. **Sample weighting helpers** in `forecaster.py`:
+   - `make_sample_weights()` — recency exponential (half-life 90d) × seasonal Gaussian (σ 30d) × 1.5× post-2025-10-01 boost.
+   - `economic_impact_weights()` — within-day deviation weighting for q50.
+   - `curriculum_weights()`, `train_rank()`, `blend_rank_with_q50()`, `daily_variance_correction()` — implemented but unused (all hurt walk-forward or were flat).
 
-**`src/scheduler.py`** — MILP via `pulp`/CBC. Variables per slot t: `ch[t]`, `dis[t]`, `soc[t]`, binary `z[t]` to forbid simultaneous charge+discharge. Constraints: SoC bounds, energy balance with η, optional terminal SoC, daily cycle cap. Objective: revenue − degradation. Returns a `Schedule` dataclass with charge/discharge/SoC arrays, revenue, degradation, objective, delta_h. Also has `realized_revenue(schedule, realized_prices)` to evaluate a schedule against actual prices.
+### Scheduler — `src/scheduler.py`
 
-**`src/forecaster.py`** — LightGBM baseline with time-based train/valid/test split (last 30 days = test, prior 30 = valid). Saves model + feature columns + metrics. **Intended to be replaced** with the user's custom model. Keep the `train()` signature and the `model.predict(features[feature_cols])` contract and the rest of the pipeline keeps working.
+PuLP/CBC MILP with separate charge/discharge binaries (`z[t]`, `y[t]`).
 
-**`src/evaluate.py`** — for each day: solves perfect-foresight, solves with forecast prices, evaluates the forecast schedule on realized prices. Returns `capture_ratio = realized / perfect`. Also has `rolling_backtest()` and `summary()`.
+**Key parameters (set in validation/walkforward scripts):**
+- `cyclic_penalty = 3.0 €/MWh` (soft cyclic SoC) — **single biggest lever (+6 pp vs hard cyclic)**
+- `max_cycles_per_day = 1.5`
 
-### Final dataset summary
+**`optimize(prices, battery, ...)`** — single-day 96-MTU LP. Standard production path.
 
-`data/processed/features.parquet` — **THE training-ready file**:
-- 81,692 rows × 73 columns
-- 2024-01-01 00:00:00+02:00 → 2026-04-30 23:45:00+03:00
-- Uniform 15-min, Europe/Athens TZ
-- Target: `dam_price_eur_mwh`
-- Feature groups: 15 price (incl lags+rolls), 8 generation, 7 load, 28 weather, 3 fuels, 10 calendar, plus regime/derived
+**`optimize_multiday(prices_d0, prices_d1, battery, d1_discount=1.0, ...)`** — 2-day rolling-horizon LP (MPC). See Section 5 for full analysis.
+
+### Validation pipelines
+
+| Script | Purpose |
+|---|---|
+| `scripts/16_validate_stack.py` | One-shot 30-day held-out. Trains once. Optimistic (overfit-prone). |
+| **`scripts/17_walkforward.py`** | **Production-honest. 5 folds × 7 days. Claim this number externally.** |
+| `scripts/18_live_loop.py` | Operational tick / forecast / evaluate. `--tick`, `--forecast YYYY-MM-DD`, `--serve`. |
+| `scripts/19_walkforward_mpc.py` | Walk-forward with full MPC (α=1.0). Kept for reference. Results worse than baseline. |
+| `scripts/20_mpc_alpha_search.py` | Alpha grid search: trains once per fold, sweeps all α values. |
 
 ---
 
-## 4. Pipeline Cheat Sheet
+## 4. Honest Progression of Experiments
 
-```bash
-# Install
-pip install -r requirements.txt
+What was tested and the measured effect on walk-forward capture. Reverted items not listed.
 
-# Fetch all data (HEnEx scraper has been run; rerunning re-uses cache)
-python scripts/01_fetch_data.py --skip-entsoe   # entsoe is blocked on token
-
-# Build the 73-column 15-min training dataset
-python scripts/02_build_features.py
-
-# Train the baseline LightGBM (USER WILL LIKELY REPLACE THIS)
-python scripts/03_train.py
-
-# Backtest: capture-ratio per day vs perfect foresight
-python scripts/04_backtest.py
-```
-
----
-
-## 5. What is PENDING — Current Task: Lower MAE from 25.14 to ~18–20 EUR/MWh
-
-### ⚡ ACTIVE WORK — Leakage removal + feature reduction
-
-**Background.** Initial 7-day CV MAE was 10 €/MWh (too optimistic). Root cause: lag1 (15-min autoregression) leaked from today into the next-day forecast. Switched to realistic-lags-only (lag96=24h, lag672=7d); honest MAE rose to **25.14 €/MWh** on 30-day held-out validation.
-
-**Current strategy:**
-1. **Remove remaining leakage:** HEnEx outputs include realized generation (by fuel type), realized load (by voltage level), production totals, demand totals. These are only known *after the day closes*. The forecaster should not see them on forecast day. Solution: Added `build_clean_dataset(start, lag_realized=96)` in `src/features.py` that:
-   - Replaces all realized-only columns with their 96h lags (yesterday-at-this-hour)
-   - Aggregates weather across 4 cities (Athens, Thessaloniki, Patras, Crete) → `gr_avg_*` and `gr_std_*` per variable
-   - Drops redundant calendar columns (hour, minute_of_day, doy, month are encoded in sin/cos pairs)
-   - Drops low-value weather (wind_direction, direct_radiation, diffuse_radiation)
-   - Target: ~35 features (down from 72 realistic-lags)
-
-2. **Test on CV:** Run `scripts/10_experiment_clean.py` to:
-   - Load clean dataset (35 features)
-   - Run 5-fold rolling-origin CV on q50 only (faster iteration)
-   - Compare MAE to realistic-lags baseline (25.14)
-   - Report feature reduction + importance
-
-3. **Hyperparameter tuning (if MAE acceptable):** Grid-search on clean features:
-   - learning_rate: [0.01, 0.05, 0.1]
-   - num_leaves: [31, 63, 127]
-   - min_data_in_leaf: [30, 50, 100]
-
-4. **Ensemble 5 seeds:** Train q10/q50/q90 with different random seeds; average predictions to reduce forecast variance (~1–2 € MAE gain expected).
-
-5. **Retrain final models:** q10/q50/q90 on tuned hyperparams + clean features; validate on 30-day held-out window with `scripts/09_validate_30d.py` (retrains on data before test window, no leakage).
-
-### High priority — after MAE work
-
-1. **ENTSO-E API integration.** User has emailed `transparency@entsoe.eu` for token. Once approved, set `ENTSOE_API_KEY` in `.env` and run `python scripts/01_fetch_data.py --skip-henex --skip-weather --skip-fuels`. This adds load forecasts, wind/solar forecasts, and actual generation as additional features (can be lagged to remove leakage). The features pipeline is already wired to consume them.
-
-2. **End-to-end backtest** with final tuned models. Headline numbers to report to judges: **mean capture ratio**, mean realized revenue per day, total revenue over the test window, mean cycles/day. `scripts/08_validate.py` (7-day window) and `scripts/09_validate_30d.py` (30-day window with retraining) produce these.
-
-3. **Validate the MILP scheduler with a known-prices test.** Run `scheduler.optimize(realized_prices)` on a few sample days and visually sanity-check: SoC trajectory should ramp up at price troughs and discharge at peaks; daily cycles should respect the 1.5 cap. This is a 15-min smoke test before relying on the optimizer for the actual deliverable.
-
-### Medium priority — strengthens the submission
-
-4. **Sensitivity analysis on battery params.** Run the backtest with different `BatterySpec` configs (smaller battery, lower efficiency, tighter cycle cap). Report how revenue scales. This is the "robustness under data scarcity" story the brief explicitly asks for.
-
-5. **Forecast uncertainty / scenario robustness.** Generate forecast residual scenarios (e.g., bootstrap from historical errors), solve the MILP per scenario, report the variance. Or implement a simple stochastic MILP with N price scenarios. This directly addresses the brief's "data scarcity → robust framework" framing.
-
-6. **Visualizations for the slide deck.** SoC trajectory + charge/discharge bars overlaid on price curve, for one good day and one bad day. Capture-ratio histogram. Feature importance chart from the model.
-
-### Low priority — nice to have
-
-7. **AggrCurves features.** HEnEx publishes aggregated bid curves (`AggrCurves` xlsx). Parsing them gives bid-stack steepness as a feature — strong predictor of price spikes. The HEnEx scraper already discovers these zips; only parsing logic is needed.
-
-8. **Intraday rolling re-optimization.** Re-solve the MILP each MTU as new info arrives. Strong narrative for judges; mostly just calling `optimize()` in a sliding-window loop.
-
-9. **ADMIE scraper.** Adds Greek-specific load/RES forecasts. Skip if ENTSO-E token arrives — they cover the same data.
+| Lever | Effect | Status |
+|---|---|---|
+| Fix lag1/lag4/lag8 leakage | -2 pp (truthing — original "0.83" was leaky) | ✅ |
+| Fix HEnEx market-clearing leakage (`build_clean_dataset`) | -1.5 pp (further truthing) | ✅ |
+| Recency + seasonal weighting | +0.5 pp | ✅ |
+| Greek holidays + solar geometry features | ~+0.1 pp | Kept (no harm) |
+| **Soft cyclic SoC (penalty=3)** | **+6 pp — biggest single lever** | ✅ |
+| Economic-impact weighting on q50 | +1 pp | ✅ |
+| Scenario blend `0.6q50 + 0.2q05 + 0.2q95` | +1 pp | ✅ |
+| Tuned idle-mask (validation grid) | <0.5 pp | ✅ |
+| q50 ensemble (3 seeds) | +0.6 pp | ✅ |
+| Conformal calibration | Capture flat; calibration improved | ✅ |
+| Neighbor DA prices (IT_SUD/BG/RO lag96 + spreads) | Mean flat; **min day 0.52 → 0.67 (+15 pp robustness)** | ✅ |
+| **Hand-engineered `spike_likelihood`** | **+0.5 pp mean, +7 pp on worst day** | ✅ |
+| **2-day MPC with d1_discount=0.1** | **+0.4 pp mean, +€2,429 / 30 days** | ✅ (not yet wired to production) |
+| Per-quantile hyperparams | -0.5 pp | ❌ reverted |
+| Drop "dead-weight" features | -0.5 pp | ❌ reverted |
+| Extended training to 2022 | -0.4 pp | ❌ parquet kept, not used |
+| Full MPC (d1_discount=1.0) | -1.3 pp, -€7,503 / 30 days | ❌ see Section 5 |
+| LambdaRank within-day head | Loses to q50 (already Spearman 0.92) | ❌ available but unused |
+| Variance correction | Capture is rank-driven; didn't help | ❌ available but unused |
+| Curriculum weighting | Same or worse | ❌ wired but unused |
+| Rolling-window spike features | Helped one-shot, hurt walk-forward | ❌ reverted |
 
 ---
 
-## 6. Known Gotchas & Caveats
+## 5. MPC (2-Day Rolling Horizon) — Full Analysis
 
-- **DST transitions** drop a handful of days from the HEnEx parser (~9 spring-forward Sundays across 2021–2025) due to the 23-hour day breaking the row-length invariant. Acceptable for now (<0.5% of data). Fix would be in `parse_results_summary` to handle row length 23/25.
-- **`gen_bess_mw` is 99.6% NaN** because BESS only entered the market April 2026. We dropped it; this is correct.
-- **Fuels are daily**, forward-filled to 15-min. Don't try to interpolate them — gas/carbon don't move in 15-min steps anyway.
-- **Pre-Oct-2025 prices are hourly** repeated 4× per hour after upsampling. The `mtu_15m_active` flag tells the model when to expect within-hour variation.
-- **`yfinance` returns `Close` as a wide DataFrame in newer versions.** The fuels module already defensively handles this; don't break it.
-- **The HEnEx scraper caches downloads.** Re-running `henex.save([...])` is cheap. Zips live in `data/raw/henex/zips/`, extracted xlsx in `data/raw/henex/xlsx/`. If something looks wrong, deleting these forces a re-download.
-- **Timezone is consistently Europe/Athens** throughout. Anything you add should be either in Athens TZ already or explicitly converted. Mixing TZs silently is the most likely source of bugs.
-- **CBC is the MILP solver** (free, ships with pulp). 96 slots × 4 vars × 1 binary = solves in <1 second per day. No need to switch to commercial solvers.
-- **The user is on Windows.** Use forward slashes in paths and `bash` (not PowerShell) syntax in shell commands; both shells are available.
+### The Idea
+
+The single-day LP is myopic: it optimises each day's 96 MTUs in isolation. Its only inter-day signal is the soft cyclic penalty (3 €/MWh), which anchors EOD SoC to 50% regardless of what tomorrow looks like. If tomorrow is forecast to be a high-price day (cloudy, high residual load), we should end today at high SoC to profit tomorrow.
+
+`optimize_multiday(prices_d0, prices_d1, battery, d1_discount)` solves a single 192-MTU LP over both days. The cyclic return constraint applies at end of D1, so D0 is free to end at whatever SoC maximises combined 2-day revenue.
+
+### Full MPC (d1_discount=1.0) Hurts
+
+| Metric | Baseline | Full MPC | Delta |
+|---|---|---|---|
+| Mean capture | 0.871 | 0.858 | -1.3 pp |
+| Total EUR (30d) | €548,438 | €540,935 | -€7,503 |
+| Days helped | — | 10/30 | |
+| Days hurt | — | 20/30 | |
+
+**Why**: The LP treats D+1 forecast as ground truth. When D+1 is wrong (which it often is — MAE ~19 €/MWh), D0 ends at the wrong SoC for what actually happens. The soft cyclic penalty (3 €/MWh) in the baseline implicitly hedged against this by anchoring to 50%. Full MPC removes that anchor.
+
+### Alpha Grid Search — d1_discount=0.1 is Optimal
+
+Training once per fold, sweeping d1_discount (α) from 0.0 to 1.0:
+
+| α | W0 | W1 | W2 | W3 | W4 | Mean cap | Total EUR | Δ vs baseline |
+|---|---|---|---|---|---|---|---|---|
+| 0.0 (baseline) | 0.845 | 0.893 | 0.917 | 0.832 | 0.850 | 0.870 | €548,438 | — |
+| **0.1** | **0.863** | **0.894** | **0.917** | 0.830 | 0.850 | **0.874** | **€550,867** | **+€2,429** |
+| 0.2 | 0.862 | 0.894 | 0.917 | 0.830 | 0.850 | 0.874 | €550,828 | +€2,390 |
+| 0.3 | 0.860 | 0.894 | 0.918 | 0.830 | 0.850 | 0.874 | €550,477 | +€2,039 |
+| 0.4 | 0.854 | 0.894 | 0.911 | 0.828 | 0.850 | 0.870 | €548,306 | -€132 |
+| 0.5 | 0.847 | 0.893 | 0.911 | 0.828 | 0.850 | 0.869 | €547,370 | -€1,068 |
+| 1.0 | 0.821 | 0.892 | 0.910 | 0.833 | 0.782 | 0.859 | €540,935 | -€7,503 |
+
+**Interpretation of α=0.1**: D+1 prices are passed to the LP at 10% of their nominal value. A real 100 €/MWh spike tomorrow looks like 10 €/MWh — not enough to make the LP dramatically reposition D0, but enough to nudge EOD SoC slightly upward. The soft cyclic penalty (3 €/MWh) remains the dominant force; MPC just adjusts the anchor slightly in the right direction.
+
+Source: `reports/mpc_alpha_search.json`, `reports/mpc_alpha_weekly.csv`.
+
+### What's NOT Yet Done
+
+`optimize_multiday` is implemented in `src/scheduler.py` and validated, but **not yet wired into production**:
+- `scripts/18_live_loop.py` still calls `optimize()` (single-day)
+- `src/inference.py` still calls `optimize()` (frontend depends on this)
+
+To enable in production: pass `d1_discount=0.1` and the next day's forecast prices to `optimize_multiday()` instead of calling `optimize()`.
 
 ---
 
-## 7. User's Working Style (observed)
+## 6. Files — What Was Modified / Created
 
-- Prefers concise updates, not narrated thinking.
-- Wants quality over breadth — chose 28 months of clean data over 5 years of mixed-regime noise.
-- Will iterate on the forecaster themselves; expects scaffolding, not a finished model.
-- Comfortable with the MILP optimizer being the centerpiece — that's the deliverable, the forecaster is plumbing.
-- Stops you and redirects when an approach is wrong; respect those redirects.
+### Modified
+- `src/features.py` — solar geometry, Greek holidays, neighbor-price lags, `spike_likelihood` composite, `build_clean_dataset` exposes `_NEIGHBOR_PRICE_COLS`.
+- `src/forecaster.py` — `make_sample_weights`, `economic_impact_weights`, `curriculum_weights`, `train_rank`, `blend_rank_with_q50`, `daily_variance_correction`, `conformal_calibrate`. `train_quantile` accepts weights, hparams, curriculum flags.
+- `src/scheduler.py` — added `optimize_multiday(prices_d0, prices_d1, battery, d1_discount=1.0, ...)`. `d1_discount` scales D1 prices before solving.
+- `src/data/entsoe_client.py` — added `fetch_neighbor_prices` and `save_neighbor_prices`.
+- `scripts/09_validate_30d.py` — switched to `features_realistic.parquet` (kept for compatibility).
+
+### Created
+- `scripts/16_validate_stack.py` — one-shot 30-day validation.
+- `scripts/17_walkforward.py` — production-honest walk-forward (5 folds × 7 days).
+- `scripts/18_live_loop.py` — `--tick` / `--forecast` / `--serve` operational loop.
+- `scripts/19_walkforward_mpc.py` — walk-forward using full 2-day MPC (α=1.0). Kept for reference; results worse than baseline.
+- `scripts/20_mpc_alpha_search.py` — trains once per fold, sweeps α ∈ {0.0, 0.1, …, 1.0} at dispatch time. Optimal α=0.1 found.
+- `data/processed/features_clean.parquet` — production feature set (use this).
+- `data/processed/features_clean_extended.parquet` — 2022-2026 backfill (unused).
+- `reports/walkforward_summary.json`, `reports/walkforward_daily.csv` — baseline production numbers.
+- `reports/walkforward_mpc_summary.json`, `reports/walkforward_mpc_daily.csv` — full MPC results (worse).
+- `reports/mpc_alpha_search.json`, `reports/mpc_alpha_weekly.csv` — alpha grid search results.
+- `reports/forecasts/forecast_<YYYY-MM-DD>.csv` — per-day forecast persistence (live-loop).
+
+### NOT Modified (still old stack)
+- `src/inference.py` — production inference for the frontend. Still loads `features_realistic.parquet` and old single-booster q10/q50/q90 from `models/lgbm_q*.txt`. Frontend depends on this.
+- `models/` — frozen artifacts from `06_train_final.py`. Do not reflect new ensemble / conformal stack.
 
 ---
 
-## 8. Immediate Next Action
+## 7. How to Run
 
-**TODAY:** Run the clean-dataset experiment to see if removing leakage + reducing features helps lower MAE:
+```sh
+# Walk-forward (the number to claim externally)
+python scripts/17_walkforward.py
 
-```bash
-# Test clean dataset on 5-fold rolling-origin CV
-python scripts/10_experiment_clean.py
+# Alpha grid search (trains once per fold, sweeps MPC discount values)
+python scripts/20_mpc_alpha_search.py
+
+# Single forecast for a specific day
+python scripts/18_live_loop.py --forecast 2026-05-01
+
+# One-shot data refresh + KPI update
+python scripts/18_live_loop.py --tick
+python scripts/18_live_loop.py --tick --full-refresh   # incl. ENTSO-E + fuels (slow)
+
+# Continuous loop (15-min ticks, 11:00 daily forecast)
+python scripts/18_live_loop.py --serve
 ```
 
-Expected output:
-- Feature count: ~35 (vs 72 realistic-lags)
-- MAE comparison: should be ≤25.14 €/MWh (ideally ~20–22)
-- If within 1 € of baseline → proceed to hyperparameter tuning
-- If much worse → investigate which aggregation caused it (probably feature importance dump will show)
+**Note:** ENTSO-E API key is required for any `--full-refresh`. Use `doppler run -- <cmd>` if the key is in Doppler.
 
-**IF clean dataset MAE acceptable:**
-1. Hyperparameter grid search: learning_rate, num_leaves, min_data_in_leaf
-2. Ensemble 5 seeds on best hyperparams
-3. Retrain final q10/q50/q90 on clean features + tuned hyperparams
-4. Validate on 30-day held-out with `scripts/09_validate_30d.py` (retrains on data before test window)
-5. Report final capture ratio to judges
+---
 
-**IF clean dataset MAE much worse:**
-- Dig into feature importance: which of the 35 features are actually used?
-- Hypothesis: weather aggregation might have lost resolution; consider aggregating only certain vars
-- Hypothesis: lagging realized cols by 96h vs dropping might be worse; compare with dropping strategy
-- Hypothesis: dropping redundant calendar might have cost more than expected
+## 8. What's Left
 
+### Immediate — wire MPC into production (one session of work)
+
+1. **Update `scripts/18_live_loop.py`** — in `forecast_day()`, after generating D0's dispatch prices, also generate D+1's dispatch prices and call `optimize_multiday(..., d1_discount=0.1)` instead of `optimize()`.
+
+2. **Update `src/inference.py`** — the frontend inference path. Same change as above plus:
+   - Switch from `features_realistic.parquet` to `features_clean.parquet`
+   - Switch from single-booster q10/q50/q90 to the new ensemble + conformal stack
+   - A new script `scripts/19_train_production.py` is needed to persist the ensemble artifacts to `models/` (mirrors `17_walkforward.py`'s training but saves boosters as `lgbm_q50_seed{N}.txt`)
+
+### Capture-ratio improvements (closing the 0.871 → 0.90 gap)
+
+In priority order — these are not low-hanging anymore:
+
+1. **ENTSO-E A77/A80 outage feeds** — `entsoe-py` supports `query_unavailability_of_generation_units`. Large planned/forced CCGT or hydro outages cause most spike days the model misses. **Best shot at +1-2 pp.**
+2. **Intraday market signals** (HEnEx CRIDA/LIDA results from earlier in D-1) — the HEnEx scraper can already discover these zip files; need a new parser. **+0.5-1 pp.**
+3. **Stochastic dispatch** (CVaR-constrained MILP on q05/q95 scenarios) — significant implementation. **+1-3 pp in literature.**
+
+### Things explicitly tried and dropped — do not redo without new information
+
+- LambdaRank head — q50 Spearman already 0.92 within-day.
+- Variance correction — dispatch is rank-driven.
+- Spike/trough binary classifier warp — same features as q50, no new signal.
+- Extended training to 2022 (with or without curriculum) — domain-knowledge feature (`spike_likelihood`) subsumed it.
+- Per-quantile hparams (heavier regularization for tails) — hurt dispatch blend.
+- Pruning low-gain features — hurt capture.
+- Full MPC (d1_discount=1.0) — forecast error compounding, -1.3 pp.
+- Rolling-window spike features (`solar_shortfall`) — helped one-shot, hurt walk-forward.
+
+---
+
+## 9. Critical Gotchas
+
+1. **Capture ratio is rank-driven.** Improving MAE doesn't necessarily improve capture. Within-day Spearman matters more than RMSE. q50 is already at Spearman 0.92.
+2. **Soft cyclic SoC (penalty=3) is the dominant scheduler lever.** Hard equality caps at ~0.82. Penalty ≥ 3 saturates at 0.87.
+3. **MPC d1_discount must stay at 0.1.** Higher values compound forecast error. Lower values lose the look-ahead signal. The sweet spot is narrow: 0.1–0.3 all work, but 0.1 is best.
+4. **Neighbor prices must be lagged.** SDAC zones clear simultaneously — same-day IT_SUD price isn't available at Greek DAM gate close. Always use `lag96` / `lag672`.
+5. **One-shot validation is overfit-prone.** Always cross-check with `scripts/17_walkforward.py` before claiming an improvement is real.
+6. **Pre-2025-10-01 HEnEx data was hourly**, resampled to 15-min via `ffill`. Lag features spanning this boundary are stable; intra-hour variation features are not.
+7. **The capture-ratio numerator and denominator both depend on the battery spec.** When comparing configs, ALWAYS use the same battery for both perfect-foresight and forecast scheduler.
+8. **Test window**: `end - 30 days` to `end` of `features_clean.parquet`. Currently `2026-04-01 → 2026-04-30`.
+9. **Worst day in test window**: `2026-04-22` (cap=0.62). Spike day, 292 €/MWh peak. Canonical hard case.
+10. **Doppler required for ENTSO-E calls.** API key is not in `.env`.
+11. **Do not commit unless the user asks.**
+
+---
+
+## 10. Single Source of Truth — Current Claim
+
+> **Walk-forward over the most recent 30 days (5 folds × 7 days, leakage-free, weekly retrain simulated):**
+> Mean capture ratio **0.871**, median **0.885**, overall (€-weighted) **0.869**, total realized revenue **€548,438**, mean €18,281/day.
+> 15/30 days hit ≥ 0.90 capture. Worst day 0.62.
+>
+> **MPC with d1_discount=0.1 adds +0.4 pp / +€2,429 / 30 days** (validated in `reports/mpc_alpha_search.json`) but is not yet wired into production inference.
+>
+> vs original honest baseline (0.808, €363,852): **+6.3 pp / +€184k / +51% revenue**.
+
+When in doubt, re-run `scripts/17_walkforward.py` and quote those numbers.
