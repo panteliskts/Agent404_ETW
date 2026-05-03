@@ -3,21 +3,6 @@
 Battery energy storage dispatch optimisation — Greek DAM / ENTSO-E edition.
 Walk-forward capture ratio **0.8743** (validated, 30-day rolling, leakage-free) with the dynamic-horizon MPC stack.
 
-## Live demo
-
-[https://logicvolt.vardalas.com/](https://logicvolt.vardalas.com/)
-
-![QR code — logicvolt.vardalas.com](docs/assets/qr_logicvolt.png)
-
-| Field    | Value                                                                          |
-| -------- | ------------------------------------------------------------------------------ |
-| URL      | <https://logicvolt.vardalas.com/>                                              |
-| Pitch    | <https://drive.google.com/file/d/1vgtYiou011mC5JJEUI69tz9pgypzd4BV/view>      |
-| Username | `admin`                                                                        |
-| Password | `admin`                                                                        |
-
----
-
 ## Repo structure
 
 ```
