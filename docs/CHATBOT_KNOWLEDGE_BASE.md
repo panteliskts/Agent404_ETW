@@ -160,7 +160,6 @@ The repo has two web pieces:
 Fastest local start:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 ./start_all.sh
 ```
 
@@ -208,14 +207,13 @@ REUSE_EXISTING_SERVICES=1 ./start_all.sh
 Manual API start:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 ./venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
 Manual frontend start:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW/frontend
+cd frontend
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 

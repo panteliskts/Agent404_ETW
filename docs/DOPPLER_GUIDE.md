@@ -13,7 +13,6 @@ doppler --version
 From the repo root:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 doppler login
 ```
 
@@ -24,7 +23,6 @@ This opens the browser and stores a local Doppler CLI token.
 If the Doppler project already exists:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 doppler setup
 ```
 
@@ -114,7 +112,6 @@ doppler secrets --only-names
 The launcher now wraps itself with Doppler automatically when the Doppler CLI is available:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 ./start_all.sh
 ```
 
@@ -143,14 +140,13 @@ DOPPLER_RUN_ARGS="--project bess-optimizer --config dev" ./start_all.sh
 Backend only:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 doppler run -- ./venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
 Frontend only:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW/frontend
+cd frontend
 doppler run -- npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 

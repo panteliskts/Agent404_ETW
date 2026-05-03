@@ -22,7 +22,6 @@ Battery energy storage dispatch optimisation — Greek DAM / ENTSO-E edition
 Run the full stack from the repo root:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 ./start_all.sh
 ```
 

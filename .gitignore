@@ -84,3 +84,9 @@ Thumbs.db
 !/data/demo/.gitkeep
 .logs/
 *.log
+
+# ── Presentation / pitch artefacts ───────────────────────────────────────────
+presentation_build/
+ETW\ moments/
+docs/live_judge_pitch.md
+docs/pitch_deck_12slides.md

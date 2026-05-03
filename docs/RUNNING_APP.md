@@ -12,7 +12,6 @@ The frontend can load by itself, but it will not be functional until the API is 
 From the repo root:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 ./start_all.sh
 ```
 
@@ -56,7 +55,7 @@ USE_DOPPLER=0 REQUIRE_GROQ_KEY=0 ./start_all.sh
 Run `npm` commands inside the frontend folder:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW/frontend
+cd frontend
 npm run dev
 ```
 
@@ -67,14 +66,13 @@ That only starts the frontend. For the app to actually work, the backend must al
 Terminal 1, from the repo root:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 ./venv/bin/python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 ```
 
 Terminal 2, from the frontend folder:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW/frontend
+cd frontend
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
@@ -121,14 +119,13 @@ REUSE_EXISTING_SERVICES=1 ./start_all.sh
 If Python dependencies are missing:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW
 ./venv/bin/pip install -r requirements.txt -r api/requirements.txt
 ```
 
 If frontend dependencies are missing:
 
 ```sh
-cd /Users/pantelis/Desktop/ETW/frontend
+cd frontend
 npm install
 ```
 
